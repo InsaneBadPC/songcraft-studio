@@ -33,3 +33,7 @@ Výběr MP3 v detailu skladby již nevede k okamžitému uložení neurčitě po
 ## Stabilní provoz bez externích účtů
 
 Nedokončené propojení s Google Drivem bylo zrušeno. SongCraft Studio dále používá stávající zabezpečený společný katalog aplikace, takže data zůstávají synchronizovaná mezi mobilním a webovým rozhraním bez přidávání účtu, API klíče nebo dalšího nastavení uživatele. Hromadný import nyní vytváří postupně číslované verze `V1`, `V2` a další. Obrazovka YouTube exportu zpřístupňuje finální verze k vyzvednutí spolu s přebalem a názvem pro publikaci. Závěrečné spuštění `pnpm check`, `pnpm test` a `pnpm lint` proběhlo úspěšně.
+
+## Stažení souborů a kompletní záloha
+
+V editoru verze MP3 a v YouTube exportu je nyní dostupná akce **Uložit MP3 do telefonu / sdílet**. V nativní aplikaci stáhne hotovou kopii do dočasného úložiště a otevře systémovou nabídku, kde ji lze uložit do Souborů či odeslat do jiné aplikace; webová verze spustí běžné stažení prohlížeče. Nastavení obsahuje **Exportovat celou knihovnu**, který vytvoří ZIP se souhrnným JSON manifestem, texty, prompty, poznámkami, alby, obrázky, všemi MP3 verzemi a jejich metadaty. Pro bezpečný běh exportu je velikost ZIP omezena na 300 MB.

@@ -30,3 +30,5 @@
 - [x] Odloženo na přání uživatele: připravit webové rozhraní pro bezplatné externí hostování se zabezpečeným napojením na API aplikace.
 - [x] Zrušeno na přání uživatele: zajistit obousměrnou synchronizaci přes Google Drive manifesty; zachována je stávající synchronizace společného katalogu aplikace.
 - [x] Stabilizovat aplikaci bez nedokončeného propojení Google Drivu a bez nutnosti dalších účtů uživatele.
+- [x] Přidat jednoznačné uložení hotové MP3 do telefonu a systémové sdílení z detailu skladby i YouTube exportu.
+- [x] Přidat kompletní export knihovny obsahující texty, prompty, alba, obrázky, MP3 a metadata.
