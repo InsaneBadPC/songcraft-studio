@@ -20,3 +20,6 @@
 - [x] Přepracovat databázi tak, aby každá skladba přímo obsahovala text, obrázek, MP3 verze a album.
 - [x] Přepracovat rozhraní na přímé vytváření a úpravy samostatných položek skladeb včetně jejich přiřazení do alb.
 - [x] Zachovat samostatný katalog textů s editorem pro prompt stylu a samotný text písně a propojit jej s katalogem skladeb.
+- [x] Při uložení textu vyžádat název skladby a vytvořit propojenou cloudovou položku skladby.
+- [x] Přepracovat detail skladby na obrázek, album, kopírovatelný prompt, rozbalitelný text a spravované MP3 verze.
+- [x] Při přidání MP3 vytvořit pojmenovanou cloudovou kopii s ID3 tagy Temney, názvem skladby, albem a obrázkem.

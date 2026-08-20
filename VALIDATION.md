@@ -25,3 +25,7 @@ Detail skladby nyní nabízí přepínač mezi řazením MP3 verzí podle nejlep
 ## Propojený katalog textů a skladeb
 
 Aplikace nyní pracuje se dvěma samostatnými katalogy. Katalog **Texty** je kreativní dílna, ve které každý dokument obsahuje prompt pro styl a samotný text písně; po označení jako hotový vytvoří nebo aktualizuje propojenou skladbu. Katalog **Skladby** současně dovoluje přímo založit položku skladby, zapsat do ní stejný prompt a text, přidat vlastní obrázek, přiřadit album a následně nahrát MP3 verze. Album má vlastní obal a funguje jako společné zařazení skladeb i textů. Při vytvoření nebo aktualizaci hotového textu se jeho obsah zkopíruje do propojené skladby, takže detail skladby zůstává soběstačný i pro export a MP3 metadata.
+
+## Spravovaná MP3 kopie
+
+Výběr MP3 v detailu skladby již nevede k okamžitému uložení neurčitě pojmenovaného souboru. Uživatel nejprve zadá název verze a volitelnou poznámku. Server následně vytvoří novou kopii v cloudovém úložišti se jménem odvozeným od interpreta Temney, názvu skladby, alba a názvu verze. Do ID3 tagů této kopie vloží interpreta Temney, název skladby, přiřazené album, poznámku a při dostupném obrázku také přebal skladby. Původní nahraná MP3 není přepisována.

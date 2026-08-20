@@ -157,3 +157,13 @@ export async function getAudioVersion(userId: number, id: number) {
   const db = await databaseOrThrow();
   return (await db.select().from(audioVersions).where(and(eq(audioVersions.id, id), eq(audioVersions.userId, userId))).limit(1))[0];
 }
+
+export async function getSong(userId: number, id: number) {
+  const db = await databaseOrThrow();
+  return (await db.select().from(songs).where(and(eq(songs.id, id), eq(songs.userId, userId))).limit(1))[0];
+}
+
+export async function getAlbum(userId: number, id: number) {
+  const db = await databaseOrThrow();
+  return (await db.select().from(albums).where(and(eq(albums.id, id), eq(albums.userId, userId))).limit(1))[0];
+}

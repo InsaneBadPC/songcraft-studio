@@ -95,6 +95,43 @@ export const appRouter = router({
     deleteVersion: protectedProcedure
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(({ ctx, input }) => db.deleteAudioVersion(ctx.user.id, input.id)),
+    prepareManagedCopy: protectedProcedure
+      .input(z.object({ id: z.number().int().positive(), label: z.string().trim().min(1).max(255), note: nullableText(5000) }))
+      .mutation(async ({ ctx, input }) => {
+        const version = await db.getAudioVersion(ctx.user.id, input.id);
+        if (!version) throw new Error("Zvuková verze nebyla nalezena.");
+        const song = await db.getSong(ctx.user.id, version.songId);
+        if (!song) throw new Error("Skladba pro tuto zvukovou verzi nebyla nalezena.");
+        const album = song.albumId ? await db.getAlbum(ctx.user.id, song.albumId) : undefined;
+        const sourceUrl = await storageGetSignedUrl(version.storageKey);
+        const sourceResponse = await fetch(sourceUrl);
+        if (!sourceResponse.ok) throw new Error("Původní MP3 se nepodařilo načíst pro přípravu kopie.");
+        const coverKey = song.coverStorageKey ?? album?.coverStorageKey;
+        let image: { mime: string; type: { id: number }; description: string; imageBuffer: Buffer } | undefined;
+        if (coverKey) {
+          const coverResponse = await fetch(await storageGetSignedUrl(coverKey));
+          if (coverResponse.ok) {
+            const mime = coverResponse.headers.get("content-type") || "image/jpeg";
+            image = { mime, type: { id: 3 }, description: "SongCraft cover", imageBuffer: Buffer.from(await coverResponse.arrayBuffer()) };
+          }
+        }
+        const tagged = NodeID3.update({
+          title: song.title,
+          artist: "Temney",
+          performerInfo: "Temney",
+          album: album?.name ?? version.id3Album ?? "",
+          trackNumber: version.id3TrackNumber || undefined,
+          year: version.id3Year || undefined,
+          genre: version.id3Genre || undefined,
+          comment: input.note ? { language: "eng", text: input.note } : version.id3Comment ? { language: "eng", text: version.id3Comment } : undefined,
+          image,
+        }, Buffer.from(await sourceResponse.arrayBuffer()));
+        if (!(tagged instanceof Buffer)) throw new Error("ID3 tagy se nepodařilo vložit do nové MP3 kopie.");
+        const finalName = safeFileName(`Temney - ${song.title}${album ? ` - ${album.name}` : ""} - ${input.label}`).replace(/\.mp3$/i, "") + ".mp3";
+        const stored = await storagePut(`songcraft/${ctx.user.id}/audio/managed/${finalName}`, tagged, "audio/mpeg");
+        await db.updateAudioVersion(ctx.user.id, version.id, { label: input.label, originalFileName: finalName, storageKey: stored.key, storageUrl: stored.url, taggedStorageKey: stored.key, taggedStorageUrl: stored.url, id3Title: song.title, id3Artist: "Temney", id3Album: album?.name ?? null, id3Comment: input.note ?? version.id3Comment });
+        return { ...stored, fileName: finalName };
+      }),
     exportTaggedCopy: protectedProcedure
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(async ({ ctx, input }) => {
