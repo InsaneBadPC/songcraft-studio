@@ -17,3 +17,7 @@ Přehrávač používá multiplatformní modul Expo Audio. V detailu skladby dov
 ## Hodnocení a finální verze
 
 Každá audio verze nyní ukládá hodnocení od nuly do pěti hvězd. Označení hlavní verze je v rámci skladby vždy jedinečné. Označení finální verze současně nastaví zvolenou nahrávku jako hlavní a zruší hlavní i finální příznak ostatních verzí téže skladby, takže katalog, přehrávač a export vždy pracují s jednoznačnou preferovanou nahrávkou. Migrace databáze byla aplikována bez destruktivní změny stávajících dat; dřívější verze začínají s hodnocením nula a bez finálního příznaku.
+
+## Řazení a filtrování katalogu
+
+Detail skladby nyní nabízí přepínač mezi řazením MP3 verzí podle nejlepšího hodnocení a podle nejnovější verze. Knihovna skladeb obsahuje samostatný filtr „Pouze finální“, který zobrazí jen skladby s alespoň jednou verzí označenou jako finální a u výsledků ukazuje název této verze. Po rozšíření byly znovu úspěšně spuštěny `pnpm check`, `pnpm test` a `pnpm lint`.
