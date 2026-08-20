@@ -1,11 +1,22 @@
-import { eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+
+import {
+  albums,
+  audioVersions,
+  type InsertAlbum,
+  type InsertAudioVersion,
+  type InsertLyricDocument,
+  type InsertSong,
+  type InsertUser,
+  lyricDocuments,
+  songs,
+  users,
+} from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -18,75 +29,104 @@ export async function getDb() {
   return _db;
 }
 
-export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
-
+async function databaseOrThrow() {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
-  }
+  if (!db) throw new Error("Cloudová databáze není momentálně dostupná.");
+  return db;
+}
 
-  try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
+export async function upsertUser(user: InsertUser): Promise<void> {
+  if (!user.openId) throw new Error("User openId is required for upsert");
+  const db = await getDb();
+  if (!db) return;
 
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
+  const values: InsertUser = { openId: user.openId, lastSignedIn: new Date() };
+  const updateSet: Record<string, unknown> = { lastSignedIn: new Date() };
+  (["name", "email", "loginMethod"] as const).forEach((field) => {
+    if (user[field] !== undefined) {
+      values[field] = user[field] ?? null;
+      updateSet[field] = user[field] ?? null;
     }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = "admin";
-      updateSet.role = "admin";
-    }
+  });
+  values.role = user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user");
+  updateSet.role = values.role;
 
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
-  }
+  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
 }
 
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
+  if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+  return result[0];
 }
 
-// TODO: add feature queries here as your schema grows.
+export async function getStudioSnapshot(userId: number) {
+  const db = await databaseOrThrow();
+  const [albumRows, documentRows, songRows, versionRows] = await Promise.all([
+    db.select().from(albums).where(eq(albums.userId, userId)).orderBy(asc(albums.sortOrder), asc(albums.name)),
+    db.select().from(lyricDocuments).where(eq(lyricDocuments.userId, userId)).orderBy(desc(lyricDocuments.updatedAt)),
+    db.select().from(songs).where(eq(songs.userId, userId)).orderBy(desc(songs.completedAt)),
+    db.select().from(audioVersions).where(eq(audioVersions.userId, userId)).orderBy(desc(audioVersions.isPrimary), asc(audioVersions.label)),
+  ]);
+  return { albums: albumRows, documents: documentRows, songs: songRows, versions: versionRows };
+}
+
+export async function createAlbum(data: InsertAlbum) {
+  const db = await databaseOrThrow();
+  const result = await db.insert(albums).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function updateAlbum(userId: number, id: number, data: Partial<InsertAlbum>) {
+  const db = await databaseOrThrow();
+  await db.update(albums).set(data).where(and(eq(albums.id, id), eq(albums.userId, userId)));
+}
+
+export async function createDocument(data: InsertLyricDocument) {
+  const db = await databaseOrThrow();
+  const result = await db.insert(lyricDocuments).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function updateDocument(userId: number, id: number, data: Partial<InsertLyricDocument>) {
+  const db = await databaseOrThrow();
+  await db.update(lyricDocuments).set(data).where(and(eq(lyricDocuments.id, id), eq(lyricDocuments.userId, userId)));
+}
+
+export async function completeDocument(userId: number, id: number) {
+  const db = await databaseOrThrow();
+  const document = (await db.select().from(lyricDocuments).where(and(eq(lyricDocuments.id, id), eq(lyricDocuments.userId, userId))).limit(1))[0];
+  if (!document) throw new Error("Textový dokument nebyl nalezen.");
+
+  const now = new Date();
+  await db.update(lyricDocuments).set({ status: "complete", completedAt: now }).where(eq(lyricDocuments.id, id));
+  const existingSong = (await db.select().from(songs).where(and(eq(songs.sourceDocumentId, id), eq(songs.userId, userId))).limit(1))[0];
+  if (existingSong) {
+    await db.update(songs).set({ title: document.title, albumId: document.albumId, completedAt: now }).where(eq(songs.id, existingSong.id));
+    return existingSong.id;
+  }
+  const result = await db.insert(songs).values({ userId, sourceDocumentId: id, albumId: document.albumId, title: document.title, completedAt: now });
+  return Number(result[0].insertId);
+}
+
+export async function createAudioVersion(data: InsertAudioVersion) {
+  const db = await databaseOrThrow();
+  const result = await db.insert(audioVersions).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function updateAudioVersion(userId: number, id: number, data: Partial<InsertAudioVersion>) {
+  const db = await databaseOrThrow();
+  await db.update(audioVersions).set(data).where(and(eq(audioVersions.id, id), eq(audioVersions.userId, userId)));
+}
+
+export async function deleteAudioVersion(userId: number, id: number) {
+  const db = await databaseOrThrow();
+  await db.delete(audioVersions).where(and(eq(audioVersions.id, id), eq(audioVersions.userId, userId)));
+}
+
+export async function getAudioVersion(userId: number, id: number) {
+  const db = await databaseOrThrow();
+  return (await db.select().from(audioVersions).where(and(eq(audioVersions.id, id), eq(audioVersions.userId, userId))).limit(1))[0];
+}

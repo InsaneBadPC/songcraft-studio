@@ -32,7 +32,7 @@ const env = {
   appSlug: "songcraft-studio",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
-  logoUrl: "",
+  logoUrl: "/manus-storage/songcraft-studio-icon_76d41636.png",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
@@ -81,11 +81,17 @@ const config: ExpoConfig = {
   },
   web: {
     bundler: "metro",
-    output: "static",
     favicon: "./assets/images/favicon.png",
   },
   plugins: [
     "expo-router",
+    "expo-document-picker",
+    [
+      "expo-image-picker",
+      {
+        "photosPermission": "Allow $(PRODUCT_NAME) to choose artwork for songs and albums."
+      }
+    ],
     [
       "expo-audio",
       {
