@@ -23,3 +23,10 @@
 - [x] Při uložení textu vyžádat název skladby a vytvořit propojenou cloudovou položku skladby.
 - [x] Přepracovat detail skladby na obrázek, album, kopírovatelný prompt, rozbalitelný text a spravované MP3 verze.
 - [x] Při přidání MP3 vytvořit pojmenovanou cloudovou kopii s ID3 tagy Temney, názvem skladby, albem a obrázkem.
+- [x] Přidat automatické číslování MP3 verzí V1, V2 a další.
+- [x] Přidat hromadný import více MP3 souborů k jedné skladbě.
+- [x] Přidat export finálních skladeb připravený pro publikaci na YouTube.
+- [x] Zrušeno na přání uživatele: připojit Google Drive jako cílové úložiště MP3, obrázků a záložních manifestů skladeb.
+- [x] Odloženo na přání uživatele: připravit webové rozhraní pro bezplatné externí hostování se zabezpečeným napojením na API aplikace.
+- [x] Zrušeno na přání uživatele: zajistit obousměrnou synchronizaci přes Google Drive manifesty; zachována je stávající synchronizace společného katalogu aplikace.
+- [x] Stabilizovat aplikaci bez nedokončeného propojení Google Drivu a bez nutnosti dalších účtů uživatele.

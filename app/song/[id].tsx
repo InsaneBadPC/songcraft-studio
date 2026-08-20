@@ -92,6 +92,24 @@ export default function SongDetailScreen() {
       Alert.alert("Příprava MP3 se nezdařila", error instanceof Error ? error.message : "Zkus soubor nahrát znovu.");
     }
   };
+  const importMultiple = async () => {
+    const picked = await DocumentPicker.getDocumentAsync({ multiple: true, type: ["audio/mpeg", "audio/mp3"], copyToCacheDirectory: true });
+    if (picked.canceled) return;
+    const validAssets = picked.assets.filter((asset) => !asset.size || asset.size <= 25 * 1024 * 1024);
+    if (!validAssets.length) { Alert.alert("Soubory jsou příliš velké", "Každá MP3 verze může mít pro bezpečné nahrání nejvýše 25 MB."); return; }
+    if (validAssets.length !== picked.assets.length) Alert.alert("Část souborů byla vynechána", "MP3 větší než 25 MB nebyly do importu zařazeny.");
+    try {
+      for (const [index, asset] of validAssets.entries()) {
+        const label = `V${versions.length + index + 1}`;
+        const base64 = await assetToBase64(asset.uri, asset.base64);
+        const uploaded = await upload.mutateAsync({ folder: "audio", fileName: asset.name, contentType: asset.mimeType ?? "audio/mpeg", base64 });
+        const versionId = await createVersion.mutateAsync({ songId, label, originalFileName: uploaded.originalFileName, storageKey: uploaded.key, storageUrl: uploaded.url, mimeType: uploaded.mimeType, byteSize: uploaded.byteSize, id3Title: song.title, id3Artist: "Temney", id3Album: album?.name ?? null, id3TrackNumber: null, id3Year: album?.releaseYear ? String(album.releaseYear) : null, id3Genre: null, id3Comment: "Hromadný import", rating: 0, isPrimary: versions.length === 0 && index === 0 });
+        await prepareManagedCopy.mutateAsync({ id: versionId, label, note: "Hromadný import" });
+      }
+      await utils.studio.snapshot.invalidate();
+      Alert.alert("Hromadný import je hotový", `${validAssets.length} ${validAssets.length === 1 ? "verze byla připravena" : "verze byly připraveny"} a uloženy do cloudu.`);
+    } catch (error) { Alert.alert("Hromadný import se nezdařil", error instanceof Error ? error.message : "Zkus import zopakovat."); }
+  };
 
   return <ScreenContainer edges={["top", "bottom", "left", "right"]}><ScrollView contentContainerStyle={styles.content}>
     <View style={styles.topbar}><IconButton label="Zpět" icon="arrow-back" onPress={() => router.back()} /><Text numberOfLines={1} style={[styles.topbarTitle, { color: colors.foreground }]}>Detail skladby</Text><IconButton label="Upravit" icon="edit" onPress={() => router.push(`/song/${song.id}/edit` as never)} /></View>
@@ -99,10 +117,10 @@ export default function SongDetailScreen() {
     <ContentCard icon="auto-awesome" title="Prompt stylu" text={songContent.stylePrompt || "Prompt zatím nebyl vyplněn."} actionLabel="Kopírovat prompt" disabled={!songContent.stylePrompt} onAction={() => void copyText(songContent.stylePrompt, "Prompt")} />
     <ContentCard icon="format-align-left" title="Text písně" text={songContent.lyrics || "Text písně zatím nebyl vyplněn."} actionLabel="Kopírovat text" disabled={!songContent.lyrics} onAction={() => void copyText(songContent.lyrics, "Text písně")} />
     <VersionAudioPlayer versions={sortedVersions} />
-    <SectionTitle title={`Přiřazené MP3 (${versions.length})`} right={<Pressable onPress={() => void chooseMp3()}><Text style={[styles.addLink, { color: colors.primary }]}>{upload.isPending || prepareManagedCopy.isPending ? "Připravuji…" : "Přidat MP3"}</Text></Pressable>} />
+    <SectionTitle title={`Přiřazené MP3 (${versions.length})`} right={<View style={styles.pair}><Pressable onPress={() => void importMultiple()}><Text style={[styles.addLink, { color: colors.muted }]}>{upload.isPending || prepareManagedCopy.isPending ? "Připravuji…" : "Import více"}</Text></Pressable><Pressable onPress={() => void chooseMp3()}><Text style={[styles.addLink, { color: colors.primary }]}>{upload.isPending || prepareManagedCopy.isPending ? "" : "Přidat MP3"}</Text></Pressable></View>} />
     {versions.length ? <Pressable onPress={() => setVersionOrder((current) => current === "rating" ? "newest" : "rating")} style={({ pressed }) => [styles.sortControl, { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.68 : 1 }]}><MaterialIcons name={versionOrder === "rating" ? "star" : "schedule"} size={17} color={colors.primary} /><Text style={[styles.sortControlText, { color: colors.foreground }]}>{versionOrder === "rating" ? "Řazení: nejlepší hodnocení" : "Řazení: nejnovější verze"}</Text><MaterialIcons name="swap-vert" size={18} color={colors.muted} /></Pressable> : null}
     {sortedVersions.length ? sortedVersions.map((version) => <Pressable key={version.id} onPress={() => setSelectedVersion(version.id)} style={({ pressed }) => [styles.versionRow, { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}><View style={[styles.versionIcon, { backgroundColor: `${colors.primary}20` }]}><MaterialIcons name={version.isFinal ? "verified" : version.isPrimary ? "star" : "music-note"} size={21} color={version.isFinal ? colors.success : colors.primary} /></View><View style={styles.versionCopy}><View style={styles.versionTitleRow}><Text numberOfLines={1} style={[styles.versionLabel, { color: colors.foreground }]}>{version.label}</Text><View style={styles.statusBadges}>{version.isPrimary ? <Text style={[styles.mainBadge, { color: colors.primary }]}>HLAVNÍ</Text> : null}{version.isFinal ? <Text style={[styles.finalBadge, { color: colors.success }]}>FINÁLNÍ</Text> : null}</View></View><View style={styles.ratingLine}><RatingStars rating={version.rating} /><Text style={[styles.versionFile, { color: colors.muted }]}>{version.originalFileName} · {formatFileSize(version.byteSize)}</Text></View></View><MaterialIcons name="edit" size={19} color={colors.muted} /></Pressable>) : <EmptyState icon="audio-file" title="Zatím žádná zvuková verze" text="Přidej MP3 z telefonu nebo počítače. Ke každé skladbě můžeš vést více verzí." action={<PrimaryButton label="Přidat první MP3" icon="upload-file" onPress={() => void chooseMp3()} />} />}
-  </ScrollView><VersionEditor id={selectedVersion} onClose={() => setSelectedVersion(null)} /><Mp3IntakeSheet asset={pendingMp3} loading={upload.isPending || createVersion.isPending || prepareManagedCopy.isPending} onClose={() => setPendingMp3(null)} onSave={saveMp3} /></ScreenContainer>;
+  </ScrollView><VersionEditor id={selectedVersion} onClose={() => setSelectedVersion(null)} /><Mp3IntakeSheet asset={pendingMp3} defaultLabel={`V${versions.length + 1}`} loading={upload.isPending || createVersion.isPending || prepareManagedCopy.isPending} onClose={() => setPendingMp3(null)} onSave={saveMp3} /></ScreenContainer>;
 }
 
 function ContentCard({ icon, title, text, actionLabel, disabled, onAction }: { icon: React.ComponentProps<typeof MaterialIcons>["name"]; title: string; text: string; actionLabel: string; disabled: boolean; onAction: () => void }) {
@@ -110,11 +128,11 @@ function ContentCard({ icon, title, text, actionLabel, disabled, onAction }: { i
   return <View style={[styles.contentCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.cardTitle}><View style={[styles.cardIcon, { backgroundColor: `${colors.primary}1E` }]}><MaterialIcons name={icon} size={18} color={colors.primary} /></View><Text style={[styles.cardTitleText, { color: colors.foreground }]}>{title}</Text></View><Text numberOfLines={5} style={[styles.cardText, { color: colors.muted }]}>{text}</Text><Pressable disabled={disabled} onPress={onAction} style={({ pressed }) => [styles.copyButton, { borderColor: colors.border, opacity: disabled ? 0.45 : pressed ? 0.65 : 1 }]}><MaterialIcons name="content-copy" size={16} color={colors.primary} /><Text style={[styles.copyButtonText, { color: colors.primary }]}>{actionLabel}</Text></Pressable></View>;
 }
 
-function Mp3IntakeSheet({ asset, loading, onClose, onSave }: { asset: { name: string } | null; loading: boolean; onClose: () => void; onSave: (label: string, note: string) => Promise<void> }) {
+function Mp3IntakeSheet({ asset, defaultLabel, loading, onClose, onSave }: { asset: { name: string } | null; defaultLabel: string; loading: boolean; onClose: () => void; onSave: (label: string, note: string) => Promise<void> }) {
   const colors = useColors();
   const [label, setLabel] = useState("");
   const [note, setNote] = useState("");
-  useEffect(() => { if (asset) { setLabel(asset.name.replace(/\.mp3$/i, "")); setNote(""); } }, [asset]);
+  useEffect(() => { if (asset) { setLabel(defaultLabel); setNote(""); } }, [asset, defaultLabel]);
   if (!asset) return null;
   return <Modal visible transparent animationType="slide" onRequestClose={onClose}><View style={styles.modalShade}><View style={[styles.sheet, { backgroundColor: colors.background }]}><View style={[styles.handle, { backgroundColor: colors.border }]} /><View style={styles.sheetTop}><View><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Přidat MP3 verzi</Text><Text numberOfLines={1} style={[styles.sheetFile, { color: colors.muted }]}>{asset.name}</Text></View><IconButton icon="close" label="Zavřít" onPress={onClose} /></View><View style={styles.sheetContent}><Text style={[styles.metaDescription, { color: colors.muted }]}>Po uložení vznikne v cloudu nová kopie MP3 se jménem verze a ID3 tagy: Temney, název skladby, album a obrázek.</Text><Field label="Název verze MP3" value={label} onChangeText={setLabel} placeholder="Např. Master V1" colors={colors} /><Field label="Poznámka k verzi" value={note} onChangeText={setNote} placeholder="Např. čistší vokál, před publikováním" multiline colors={colors} /><PrimaryButton label={loading ? "Připravuji cloudovou kopii…" : "Uložit a připravit MP3"} icon="cloud-upload" onPress={() => void onSave(label.trim() || asset.name.replace(/\.mp3$/i, ""), note)} disabled={loading} /></View></View></View></Modal>;
 }

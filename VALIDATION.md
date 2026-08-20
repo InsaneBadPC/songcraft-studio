@@ -29,3 +29,7 @@ Aplikace nyní pracuje se dvěma samostatnými katalogy. Katalog **Texty** je kr
 ## Spravovaná MP3 kopie
 
 Výběr MP3 v detailu skladby již nevede k okamžitému uložení neurčitě pojmenovaného souboru. Uživatel nejprve zadá název verze a volitelnou poznámku. Server následně vytvoří novou kopii v cloudovém úložišti se jménem odvozeným od interpreta Temney, názvu skladby, alba a názvu verze. Do ID3 tagů této kopie vloží interpreta Temney, název skladby, přiřazené album, poznámku a při dostupném obrázku také přebal skladby. Původní nahraná MP3 není přepisována.
+
+## Stabilní provoz bez externích účtů
+
+Nedokončené propojení s Google Drivem bylo zrušeno. SongCraft Studio dále používá stávající zabezpečený společný katalog aplikace, takže data zůstávají synchronizovaná mezi mobilním a webovým rozhraním bez přidávání účtu, API klíče nebo dalšího nastavení uživatele. Hromadný import nyní vytváří postupně číslované verze `V1`, `V2` a další. Obrazovka YouTube exportu zpřístupňuje finální verze k vyzvednutí spolu s přebalem a názvem pro publikaci. Závěrečné spuštění `pnpm check`, `pnpm test` a `pnpm lint` proběhlo úspěšně.
