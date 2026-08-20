@@ -22,7 +22,7 @@ const metadataSchema = z.object({
   id3Year: nullableText(8),
   id3Genre: nullableText(128),
   id3Comment: nullableText(5000),
-  isPrimary: z.boolean().optional(),
+  rating: z.number().int().min(0).max(5).optional(),
 });
 
 export const appRouter = router({
@@ -69,14 +69,20 @@ export const appRouter = router({
         return { ...stored, byteSize: bytes.byteLength, originalFileName: fileName, mimeType: input.contentType };
       }),
     createVersion: protectedProcedure
-      .input(z.object({ songId: z.number().int().positive(), originalFileName: z.string().min(1).max(512), storageKey: z.string().min(1).max(512), storageUrl: z.string().min(1).max(1024), mimeType: z.string().min(1).max(128), byteSize: z.number().int().nonnegative(), ...metadataSchema.shape }))
-      .mutation(({ ctx, input }) => db.createAudioVersion({ ...input, userId: ctx.user.id, isPrimary: input.isPrimary ?? false })),
+      .input(z.object({ songId: z.number().int().positive(), originalFileName: z.string().min(1).max(512), storageKey: z.string().min(1).max(512), storageUrl: z.string().min(1).max(1024), mimeType: z.string().min(1).max(128), byteSize: z.number().int().nonnegative(), isPrimary: z.boolean().optional(), ...metadataSchema.shape }))
+      .mutation(({ ctx, input }) => db.createAudioVersion({ ...input, userId: ctx.user.id, rating: input.rating ?? 0, isPrimary: input.isPrimary ?? false, isFinal: false })),
     updateVersion: protectedProcedure
       .input(z.object({ id: z.number().int().positive(), ...metadataSchema.shape }))
       .mutation(({ ctx, input }) => {
         const { id, ...data } = input;
         return db.updateAudioVersion(ctx.user.id, id, data);
       }),
+    setPrimaryVersion: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(({ ctx, input }) => db.markAudioVersionPrimary(ctx.user.id, input.id)),
+    setFinalVersion: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(({ ctx, input }) => db.markAudioVersionFinal(ctx.user.id, input.id)),
     deleteVersion: protectedProcedure
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(({ ctx, input }) => db.deleteAudioVersion(ctx.user.id, input.id)),

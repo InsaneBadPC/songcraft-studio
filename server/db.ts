@@ -67,7 +67,7 @@ export async function getStudioSnapshot(userId: number) {
     db.select().from(albums).where(eq(albums.userId, userId)).orderBy(asc(albums.sortOrder), asc(albums.name)),
     db.select().from(lyricDocuments).where(eq(lyricDocuments.userId, userId)).orderBy(desc(lyricDocuments.updatedAt)),
     db.select().from(songs).where(eq(songs.userId, userId)).orderBy(desc(songs.completedAt)),
-    db.select().from(audioVersions).where(eq(audioVersions.userId, userId)).orderBy(desc(audioVersions.isPrimary), asc(audioVersions.label)),
+    db.select().from(audioVersions).where(eq(audioVersions.userId, userId)).orderBy(desc(audioVersions.isFinal), desc(audioVersions.isPrimary), desc(audioVersions.rating), asc(audioVersions.label)),
   ]);
   return { albums: albumRows, documents: documentRows, songs: songRows, versions: versionRows };
 }
@@ -119,6 +119,22 @@ export async function createAudioVersion(data: InsertAudioVersion) {
 export async function updateAudioVersion(userId: number, id: number, data: Partial<InsertAudioVersion>) {
   const db = await databaseOrThrow();
   await db.update(audioVersions).set(data).where(and(eq(audioVersions.id, id), eq(audioVersions.userId, userId)));
+}
+
+export async function markAudioVersionPrimary(userId: number, id: number) {
+  const db = await databaseOrThrow();
+  const version = await getAudioVersion(userId, id);
+  if (!version) throw new Error("Zvuková verze nebyla nalezena.");
+  await db.update(audioVersions).set({ isPrimary: false }).where(and(eq(audioVersions.userId, userId), eq(audioVersions.songId, version.songId)));
+  await db.update(audioVersions).set({ isPrimary: true }).where(and(eq(audioVersions.id, id), eq(audioVersions.userId, userId)));
+}
+
+export async function markAudioVersionFinal(userId: number, id: number) {
+  const db = await databaseOrThrow();
+  const version = await getAudioVersion(userId, id);
+  if (!version) throw new Error("Zvuková verze nebyla nalezena.");
+  await db.update(audioVersions).set({ isPrimary: false, isFinal: false }).where(and(eq(audioVersions.userId, userId), eq(audioVersions.songId, version.songId)));
+  await db.update(audioVersions).set({ isPrimary: true, isFinal: true }).where(and(eq(audioVersions.id, id), eq(audioVersions.userId, userId)));
 }
 
 export async function deleteAudioVersion(userId: number, id: number) {

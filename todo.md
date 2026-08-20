@@ -15,3 +15,4 @@
 - [x] Ověřit typy, testy a klíčové mobilní i webové toky.
 - [x] Sepsat podrobný popis architektury, funkcí, omezení a dalšího rozvoje.
 - [x] Přidat integrovaný MP3 přehrávač s přepínáním a porovnáváním verzí v detailu skladby.
+- [x] Přidat pětihvězdičkové hodnocení a označení hlavní nebo finální MP3 verze.
