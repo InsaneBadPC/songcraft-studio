@@ -57,6 +57,15 @@ export const appRouter = router({
     completeDocument: protectedProcedure
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(({ ctx, input }) => db.completeDocument(ctx.user.id, input.id)),
+    createSong: protectedProcedure
+      .input(z.object({ title: z.string().trim().min(1).max(255), albumId: nullableId, stylePrompt: nullableText(30000), lyrics: nullableText(100000), notes: nullableText(30000), coverStorageKey: nullableText(512), coverUrl: nullableText(1024) }))
+      .mutation(({ ctx, input }) => db.createSong({ ...input, userId: ctx.user.id, sourceDocumentId: null, completedAt: new Date() })),
+    updateSong: protectedProcedure
+      .input(z.object({ id: z.number().int().positive(), title: z.string().trim().min(1).max(255).optional(), albumId: nullableId, stylePrompt: nullableText(30000), lyrics: nullableText(100000), notes: nullableText(30000), coverStorageKey: nullableText(512), coverUrl: nullableText(1024) }))
+      .mutation(({ ctx, input }) => {
+        const { id, ...data } = input;
+        return db.updateSong(ctx.user.id, id, data);
+      }),
     upload: protectedProcedure
       .input(z.object({ folder: z.enum(["covers", "audio"]), fileName: z.string().min(1).max(512), contentType: z.string().min(1).max(128), base64: z.string().min(1).refine((value) => Buffer.byteLength(value, "base64") <= 25 * 1024 * 1024, "Soubor je pro bezpečné nahrání příliš velký (maximum je 25 MB).") }))
       .mutation(async ({ ctx, input }) => {

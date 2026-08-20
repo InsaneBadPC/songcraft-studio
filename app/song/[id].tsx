@@ -26,13 +26,14 @@ export default function SongDetailScreen() {
   const createVersion = trpc.studio.createVersion.useMutation();
 
   const song = snapshot.data?.songs.find((entry) => entry.id === songId);
-  const document = snapshot.data?.documents.find((entry) => entry.id === song?.sourceDocumentId);
+  const legacyDocument = snapshot.data?.documents.find((entry) => entry.id === song?.sourceDocumentId);
   const album = snapshot.data?.albums.find((entry) => entry.id === song?.albumId);
   const versions = useMemo(() => snapshot.data?.versions.filter((entry) => entry.songId === songId) ?? [], [snapshot.data?.versions, songId]);
   const sortedVersions = useMemo(() => [...versions].sort((left, right) => versionOrder === "rating" ? right.rating - left.rating || Number(right.isFinal) - Number(left.isFinal) || Number(right.isPrimary) - Number(left.isPrimary) || right.id - left.id : right.id - left.id), [versionOrder, versions]);
 
   if (snapshot.isLoading) return <ScreenContainer><LoadingState label="Načítám skladbu…" /></ScreenContainer>;
-  if (!song || !document) return <ScreenContainer className="p-5 justify-center"><EmptyState icon="music-off" title="Skladba nebyla nalezena" text="Vrať se do knihovny a zkus otevřít položku znovu." action={<PrimaryButton label="Do knihovny" icon="library-music" onPress={() => router.replace("/(tabs)/library" as never)} />} /></ScreenContainer>;
+  if (!song) return <ScreenContainer className="p-5 justify-center"><EmptyState icon="music-off" title="Skladba nebyla nalezena" text="Vrať se do knihovny a zkus otevřít položku znovu." action={<PrimaryButton label="Do knihovny" icon="library-music" onPress={() => router.replace("/(tabs)/library" as never)} />} /></ScreenContainer>;
+  const songContent = { stylePrompt: song.stylePrompt ?? legacyDocument?.stylePrompt ?? "", lyrics: song.lyrics ?? legacyDocument?.lyrics ?? "", coverUrl: song.coverUrl ?? legacyDocument?.coverUrl ?? album?.coverUrl };
 
   const copyText = async (content: string, label: string) => {
     if (!content.trim()) return;
@@ -85,10 +86,10 @@ export default function SongDetailScreen() {
   };
 
   return <ScreenContainer edges={["top", "bottom", "left", "right"]}><ScrollView contentContainerStyle={styles.content}>
-    <View style={styles.topbar}><IconButton label="Zpět" icon="arrow-back" onPress={() => router.back()} /><Text numberOfLines={1} style={[styles.topbarTitle, { color: colors.foreground }]}>Detail skladby</Text><View style={styles.topbarSpacer} /></View>
-    <View style={[styles.songHero, { backgroundColor: colors.surface, borderColor: colors.border }]}><CoverArt uri={document.coverUrl ?? album?.coverUrl} title={song.title} size={92} /><View style={styles.songHeroCopy}><Text style={[styles.songName, { color: colors.foreground }]}>{song.title}</Text><Text style={[styles.songAlbum, { color: colors.muted }]}>{album?.name ?? "Bez alba"}</Text><View style={styles.complete}><MaterialIcons name="check-circle" size={15} color={colors.success} /><Text style={[styles.completeText, { color: colors.success }]}>hotový text</Text></View></View></View>
-    <ContentCard icon="auto-awesome" title="Prompt stylu" text={document.stylePrompt || "Prompt zatím nebyl vyplněn."} actionLabel="Kopírovat prompt" disabled={!document.stylePrompt} onAction={() => void copyText(document.stylePrompt ?? "", "Prompt")} />
-    <ContentCard icon="format-align-left" title="Text písně" text={document.lyrics || "Text písně zatím nebyl vyplněn."} actionLabel="Kopírovat text" disabled={!document.lyrics} onAction={() => void copyText(document.lyrics ?? "", "Text písně")} />
+    <View style={styles.topbar}><IconButton label="Zpět" icon="arrow-back" onPress={() => router.back()} /><Text numberOfLines={1} style={[styles.topbarTitle, { color: colors.foreground }]}>Detail skladby</Text><IconButton label="Upravit" icon="edit" onPress={() => router.push(`/song/${song.id}/edit` as never)} /></View>
+    <View style={[styles.songHero, { backgroundColor: colors.surface, borderColor: colors.border }]}><CoverArt uri={songContent.coverUrl} title={song.title} size={92} /><View style={styles.songHeroCopy}><Text style={[styles.songName, { color: colors.foreground }]}>{song.title}</Text><Text style={[styles.songAlbum, { color: colors.muted }]}>{album?.name ?? "Bez alba"}</Text><View style={styles.complete}><MaterialIcons name="check-circle" size={15} color={colors.success} /><Text style={[styles.completeText, { color: colors.success }]}>položka skladby</Text></View></View></View>
+    <ContentCard icon="auto-awesome" title="Prompt stylu" text={songContent.stylePrompt || "Prompt zatím nebyl vyplněn."} actionLabel="Kopírovat prompt" disabled={!songContent.stylePrompt} onAction={() => void copyText(songContent.stylePrompt, "Prompt")} />
+    <ContentCard icon="format-align-left" title="Text písně" text={songContent.lyrics || "Text písně zatím nebyl vyplněn."} actionLabel="Kopírovat text" disabled={!songContent.lyrics} onAction={() => void copyText(songContent.lyrics, "Text písně")} />
     <VersionAudioPlayer versions={sortedVersions} />
     <SectionTitle title={`Přiřazené MP3 (${versions.length})`} right={<Pressable onPress={() => void addMp3()}><Text style={[styles.addLink, { color: colors.primary }]}>{upload.isPending ? "Nahrávám…" : "Přidat MP3"}</Text></Pressable>} />
     {versions.length ? <Pressable onPress={() => setVersionOrder((current) => current === "rating" ? "newest" : "rating")} style={({ pressed }) => [styles.sortControl, { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.68 : 1 }]}><MaterialIcons name={versionOrder === "rating" ? "star" : "schedule"} size={17} color={colors.primary} /><Text style={[styles.sortControlText, { color: colors.foreground }]}>{versionOrder === "rating" ? "Řazení: nejlepší hodnocení" : "Řazení: nejnovější verze"}</Text><MaterialIcons name="swap-vert" size={18} color={colors.muted} /></Pressable> : null}

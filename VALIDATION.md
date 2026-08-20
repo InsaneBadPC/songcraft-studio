@@ -21,3 +21,7 @@ Každá audio verze nyní ukládá hodnocení od nuly do pěti hvězd. Označen�
 ## Řazení a filtrování katalogu
 
 Detail skladby nyní nabízí přepínač mezi řazením MP3 verzí podle nejlepšího hodnocení a podle nejnovější verze. Knihovna skladeb obsahuje samostatný filtr „Pouze finální“, který zobrazí jen skladby s alespoň jednou verzí označenou jako finální a u výsledků ukazuje název této verze. Po rozšíření byly znovu úspěšně spuštěny `pnpm check`, `pnpm test` a `pnpm lint`.
+
+## Propojený katalog textů a skladeb
+
+Aplikace nyní pracuje se dvěma samostatnými katalogy. Katalog **Texty** je kreativní dílna, ve které každý dokument obsahuje prompt pro styl a samotný text písně; po označení jako hotový vytvoří nebo aktualizuje propojenou skladbu. Katalog **Skladby** současně dovoluje přímo založit položku skladby, zapsat do ní stejný prompt a text, přidat vlastní obrázek, přiřadit album a následně nahrát MP3 verze. Album má vlastní obal a funguje jako společné zařazení skladeb i textů. Při vytvoření nebo aktualizaci hotového textu se jeho obsah zkopíruje do propojené skladby, takže detail skladby zůstává soběstačný i pro export a MP3 metadata.

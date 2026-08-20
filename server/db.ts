@@ -103,11 +103,22 @@ export async function completeDocument(userId: number, id: number) {
   await db.update(lyricDocuments).set({ status: "complete", completedAt: now }).where(eq(lyricDocuments.id, id));
   const existingSong = (await db.select().from(songs).where(and(eq(songs.sourceDocumentId, id), eq(songs.userId, userId))).limit(1))[0];
   if (existingSong) {
-    await db.update(songs).set({ title: document.title, albumId: document.albumId, completedAt: now }).where(eq(songs.id, existingSong.id));
+    await db.update(songs).set({ title: document.title, albumId: document.albumId, stylePrompt: document.stylePrompt, lyrics: document.lyrics, notes: document.notes, coverStorageKey: document.coverStorageKey, coverUrl: document.coverUrl, completedAt: now }).where(eq(songs.id, existingSong.id));
     return existingSong.id;
   }
-  const result = await db.insert(songs).values({ userId, sourceDocumentId: id, albumId: document.albumId, title: document.title, completedAt: now });
+  const result = await db.insert(songs).values({ userId, sourceDocumentId: id, albumId: document.albumId, title: document.title, stylePrompt: document.stylePrompt, lyrics: document.lyrics, notes: document.notes, coverStorageKey: document.coverStorageKey, coverUrl: document.coverUrl, completedAt: now });
   return Number(result[0].insertId);
+}
+
+export async function createSong(data: InsertSong) {
+  const db = await databaseOrThrow();
+  const result = await db.insert(songs).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function updateSong(userId: number, id: number, data: Partial<InsertSong>) {
+  const db = await databaseOrThrow();
+  await db.update(songs).set(data).where(and(eq(songs.id, id), eq(songs.userId, userId)));
 }
 
 export async function createAudioVersion(data: InsertAudioVersion) {

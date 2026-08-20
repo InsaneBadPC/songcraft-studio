@@ -17,3 +17,6 @@
 - [x] Přidat integrovaný MP3 přehrávač s přepínáním a porovnáváním verzí v detailu skladby.
 - [x] Přidat pětihvězdičkové hodnocení a označení hlavní nebo finální MP3 verze.
 - [x] Přidat řazení MP3 verzí podle hvězdičkového hodnocení a filtr knihovny na finální skladby.
+- [x] Přepracovat databázi tak, aby každá skladba přímo obsahovala text, obrázek, MP3 verze a album.
+- [x] Přepracovat rozhraní na přímé vytváření a úpravy samostatných položek skladeb včetně jejich přiřazení do alb.
+- [x] Zachovat samostatný katalog textů s editorem pro prompt stylu a samotný text písně a propojit jej s katalogem skladeb.
