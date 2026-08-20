@@ -9,3 +9,7 @@ Před ověřením byla upravena konfigurace webového běhu. Statický exportní
 ## Automatická kontrola
 
 Byly úspěšně spuštěny příkazy `pnpm check`, `pnpm test` a `pnpm lint`. Vitest ověřil datový model SongCraft Studio ve dvou testech; původní test odhlášení zůstává záměrně přeskočený, protože vyžaduje samostatný autentizační kontext šablony.
+
+## Integrovaný MP3 přehrávač
+
+Přehrávač používá multiplatformní modul Expo Audio. V detailu skladby dovoluje zvolit kteroukoli přiřazenou verzi, spustit či pozastavit její poslech a posunout se o deset sekund zpět nebo vpřed. Zobrazuje aktivní verzi, stav načítání, průběh a délku. Přepnutí verze nejprve pozastaví předchozí přehrávání, takže se dvě MP3 nikdy nepřekrývají. Po rozšíření byly znovu úspěšně spuštěny `pnpm check`, `pnpm test` a `pnpm lint`.
