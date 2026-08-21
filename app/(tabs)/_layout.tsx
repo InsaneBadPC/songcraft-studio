@@ -11,7 +11,7 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const bottomPadding = Platform.OS === "web" ? 12 : Math.max(insets.bottom, 8);
   return (
-    <Tabs screenOptions={{ headerShown: false, tabBarActiveTintColor: colors.primary, tabBarInactiveTintColor: colors.muted, tabBarButton: HapticTab, tabBarStyle: { height: 57 + bottomPadding, paddingTop: 7, paddingBottom: bottomPadding, backgroundColor: colors.background, borderTopColor: colors.border, borderTopWidth: 0.5 }, tabBarLabelStyle: { fontSize: 10, fontWeight: "700" } }}>
+    <Tabs screenOptions={{ headerShown: false, tabBarActiveTintColor: colors.primary, tabBarInactiveTintColor: colors.muted, tabBarButton: HapticTab as never, tabBarStyle: { height: 57 + bottomPadding, paddingTop: 7, paddingBottom: bottomPadding, backgroundColor: colors.background, borderTopColor: colors.border, borderTopWidth: 0.5 }, tabBarLabelStyle: { fontSize: 10, fontWeight: "700" } }}>
       <Tabs.Screen name="index" options={{ title: "Přehled", tabBarIcon: ({ color }) => <IconSymbol size={23} name="house.fill" color={color} /> }} />
       <Tabs.Screen name="texts" options={{ title: "Texty", tabBarIcon: ({ color }) => <IconSymbol size={23} name="square.and.pencil" color={color} /> }} />
       <Tabs.Screen name="albums" options={{ title: "Alba", tabBarIcon: ({ color }) => <IconSymbol size={23} name="rectangle.stack.fill" color={color} /> }} />
