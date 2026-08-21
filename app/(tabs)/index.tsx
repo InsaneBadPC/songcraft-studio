@@ -4,7 +4,7 @@ import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { CoverArt, EmptyState, LoadingState, PrimaryButton, SectionTitle, StatusChip, StudioHeader, formatDate } from "@/components/studio-ui";
 import { ScreenContainer } from "@/components/screen-container";
-import { startOAuthLogin } from "@/constants/oauth";
+import { startPrivateLogin } from "@/constants/oauth";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
@@ -15,7 +15,7 @@ export default function HomeScreen() {
   const snapshot = trpc.studio.snapshot.useQuery(undefined, { enabled: isAuthenticated });
 
   if (loading || (isAuthenticated && snapshot.isLoading)) return <ScreenContainer><LoadingState /></ScreenContainer>;
-  if (!isAuthenticated) return <ScreenContainer className="p-5 justify-center"><EmptyState icon="lock-outline" title="Tvoje studio je soukromé" text="Přihlas se, aby se texty, přebaly a verze skladeb bezpečně synchronizovaly mezi Androidem a webem." action={<PrimaryButton label="Přihlásit se" icon="login" onPress={() => void startOAuthLogin()} />} /></ScreenContainer>;
+  if (!isAuthenticated) return <ScreenContainer className="p-5 justify-center"><EmptyState icon="lock-outline" title="Tvoje studio je soukromé" text="Přihlas se svým soukromým účtem, aby se tvoje texty, přebaly a verze skladeb bezpečně synchronizovaly mezi Androidem a webem." action={<PrimaryButton label="Přihlásit se" icon="login" onPress={() => void startPrivateLogin()} />} /></ScreenContainer>;
 
   const data = snapshot.data;
   const drafts = data?.documents.filter((document) => document.status === "draft") ?? [];

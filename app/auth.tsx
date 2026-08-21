@@ -7,43 +7,111 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 import { supabase } from "@/lib/supabase";
 
+const PRIVATE_ACCOUNTS = [
+  { id: "temney", name: "Temney", email: "temney@songcraft.test", description: "Autor a hlavní studio" },
+  { id: "dj-palacinka", name: "DJ Palačinka", email: "dj.palacinka@songcraft.test", description: "Vlastní soukromý prostor" },
+  { id: "verca", name: "Verča", email: "verca@songcraft.test", description: "Vlastní soukromý prostor" },
+] as const;
+
 export default function AuthScreen() {
   const colors = useColors();
-  const [email, setEmail] = useState("");
+  const [selectedAccountId, setSelectedAccountId] = useState<(typeof PRIVATE_ACCOUNTS)[number]["id"]>("temney");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const selectedAccount = PRIVATE_ACCOUNTS.find((account) => account.id === selectedAccountId) ?? PRIVATE_ACCOUNTS[0];
 
-  const withAccount = async (mode: "signIn" | "signUp") => {
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail || password.length < 8) {
-      Alert.alert("Doplň přihlášení", "Zadej e-mail a heslo alespoň o 8 znacích.");
+  const signIn = async () => {
+    if (!password) {
+      Alert.alert("Doplň heslo", `Zadej heslo účtu ${selectedAccount.name}.`);
       return;
     }
+
     setLoading(true);
-    const result = mode === "signIn"
-      ? await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
-      : await supabase.auth.signUp({ email: normalizedEmail, password, options: { data: { display_name: "Temney" } } });
+    const { error } = await supabase.auth.signInWithPassword({ email: selectedAccount.email, password });
     setLoading(false);
-    if (result.error) {
-      Alert.alert(mode === "signIn" ? "Přihlášení se nezdařilo" : "Účet se nepodařilo vytvořit", result.error.message);
+
+    if (error) {
+      Alert.alert("Přihlášení se nezdařilo", "Zkontroluj vybraný účet a heslo.");
       return;
     }
-    if (mode === "signUp" && !result.data.session) {
-      Alert.alert("Potvrď e-mail", "Otevři zprávu v e-mailu a potvrď účet. Potom se zde přihlas stejnými údaji.");
-      return;
-    }
+
+    setPassword("");
     router.replace("/(tabs)" as never);
   };
 
-  return <ScreenContainer className="p-5 justify-center"><View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-    <View style={[styles.icon, { backgroundColor: `${colors.primary}25` }]}><MaterialIcons name="lock-person" size={29} color={colors.primary} /></View>
-    <Text style={[styles.title, { color: colors.foreground }]}>Tvoje soukromé studio</Text>
-    <Text style={[styles.text, { color: colors.muted }]}>Přihlas se stejným účtem na telefonu i webu. Texty, přebaly a MP3 se pak ukládají pouze do tvého externího cloudu.</Text>
-    <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="E-mail" placeholderTextColor={colors.muted} style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]} />
-    <TextInput value={password} onChangeText={setPassword} autoCapitalize="none" secureTextEntry placeholder="Heslo (min. 8 znaků)" placeholderTextColor={colors.muted} style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]} />
-    <Pressable disabled={loading} onPress={() => void withAccount("signIn")} style={({ pressed }) => [styles.primary, { backgroundColor: colors.primary, opacity: loading || pressed ? 0.68 : 1 }]}><Text style={styles.primaryText}>{loading ? "Ověřuji…" : "Přihlásit se"}</Text></Pressable>
-    <Pressable disabled={loading} onPress={() => void withAccount("signUp")} style={({ pressed }) => [styles.secondary, { borderColor: colors.border, opacity: loading || pressed ? 0.68 : 1 }]}><Text style={[styles.secondaryText, { color: colors.foreground }]}>Vytvořit soukromý účet</Text></Pressable>
-  </View></ScreenContainer>;
+  return (
+    <ScreenContainer className="p-5 justify-center">
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={[styles.icon, { backgroundColor: `${colors.primary}25` }]}>
+          <MaterialIcons name="lock-person" size={29} color={colors.primary} />
+        </View>
+        <Text style={[styles.title, { color: colors.foreground }]}>Tvoje soukromé studio</Text>
+        <Text style={[styles.text, { color: colors.muted }]}>Vyber svůj účet a zadej heslo. Každý účet má oddělené texty, přebaly, skladby i soubory.</Text>
+
+        <View style={styles.accountList}>
+          {PRIVATE_ACCOUNTS.map((account) => {
+            const selected = account.id === selectedAccountId;
+            return (
+              <Pressable
+                key={account.id}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+                onPress={() => setSelectedAccountId(account.id)}
+                style={({ pressed }) => [
+                  styles.account,
+                  { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? `${colors.primary}12` : colors.background, opacity: pressed ? 0.72 : 1 },
+                ]}
+              >
+                <View style={[styles.avatar, { backgroundColor: selected ? colors.primary : colors.border }]}>
+                  <Text style={[styles.avatarText, { color: selected ? "#FFFFFF" : colors.foreground }]}>{account.name.slice(0, 1)}</Text>
+                </View>
+                <View style={styles.accountCopy}>
+                  <Text style={[styles.accountName, { color: colors.foreground }]}>{account.name}</Text>
+                  <Text style={[styles.accountDescription, { color: colors.muted }]}>{account.description}</Text>
+                </View>
+                <MaterialIcons name={selected ? "radio-button-checked" : "radio-button-unchecked"} size={22} color={selected ? colors.primary : colors.muted} />
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <TextInput
+          value={password}
+          onChangeText={setPassword}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+          textContentType="password"
+          autoComplete="current-password"
+          onSubmitEditing={() => void signIn()}
+          returnKeyType="done"
+          placeholder={`Heslo účtu ${selectedAccount.name}`}
+          placeholderTextColor={colors.muted}
+          style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
+        />
+        <Pressable disabled={loading} onPress={() => void signIn()} style={({ pressed }) => [styles.primary, { backgroundColor: colors.primary, opacity: loading || pressed ? 0.68 : 1 }]}>
+          <Text style={styles.primaryText}>{loading ? "Ověřuji…" : `Přihlásit se jako ${selectedAccount.name}`}</Text>
+        </Pressable>
+        <Text style={[styles.note, { color: colors.muted }]}>Přístup je omezený na Temney, DJ Palačinka a Verču. Nové účty nelze vytvářet.</Text>
+      </View>
+    </ScreenContainer>
+  );
 }
 
-const styles = StyleSheet.create({ card: { borderWidth: 1, borderRadius: 24, padding: 20, gap: 12 }, icon: { width: 58, height: 58, borderRadius: 19, alignItems: "center", justifyContent: "center" }, title: { fontSize: 22, fontWeight: "900", marginTop: 4 }, text: { fontSize: 13, lineHeight: 19, marginBottom: 5 }, input: { minHeight: 50, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, fontSize: 15 }, primary: { height: 51, borderRadius: 15, alignItems: "center", justifyContent: "center", marginTop: 4 }, primaryText: { color: "#141317", fontSize: 15, fontWeight: "900" }, secondary: { height: 48, borderRadius: 14, borderWidth: 1, alignItems: "center", justifyContent: "center" }, secondaryText: { fontSize: 14, fontWeight: "800" } });
+const styles = StyleSheet.create({
+  card: { borderWidth: 1, borderRadius: 24, padding: 20, gap: 12 },
+  icon: { width: 58, height: 58, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  title: { fontSize: 22, fontWeight: "900", marginTop: 4 },
+  text: { fontSize: 13, lineHeight: 19, marginBottom: 5 },
+  accountList: { gap: 8 },
+  account: { minHeight: 65, borderWidth: 1, borderRadius: 16, padding: 10, flexDirection: "row", alignItems: "center", gap: 10 },
+  avatar: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  avatarText: { fontSize: 16, fontWeight: "900" },
+  accountCopy: { flex: 1, gap: 2 },
+  accountName: { fontSize: 14, fontWeight: "900" },
+  accountDescription: { fontSize: 11, lineHeight: 15 },
+  input: { minHeight: 50, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, fontSize: 15, marginTop: 3 },
+  primary: { height: 51, borderRadius: 15, alignItems: "center", justifyContent: "center", marginTop: 2 },
+  primaryText: { color: "#141317", fontSize: 15, fontWeight: "900" },
+  note: { fontSize: 11, lineHeight: 16, textAlign: "center", marginTop: 2 },
+});
