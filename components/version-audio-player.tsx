@@ -22,6 +22,10 @@ export function VersionAudioPlayer({ versions }: { versions: PlayableVersion[] }
   const player = useAudioPlayer(activeVersion?.storageUrl, { updateInterval: 250 });
   const status = useAudioPlayerStatus(player);
 
+  useEffect(() => {
+    if (!versions.some((entry) => entry.id === activeId)) setActiveId(defaultVersion?.id ?? null);
+  }, [activeId, defaultVersion?.id, versions]);
+
   useEffect(() => () => { player.pause(); }, [player]);
 
   if (!activeVersion) return null;

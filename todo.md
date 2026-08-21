@@ -48,9 +48,6 @@
 - [x] Přepojit všechny obrazovky z interních tRPC volání na externí Supabase synchronizaci.
 - [x] Přepojit nahrávání souborů, MP3 kopie a exporty na Supabase Storage a Edge funkce.
 - [x] Připravit nezávislé externí nasazení webového rozhraní bez interního hostingu.
-- [x] Přidat export finální MP3 a přiřazeného obrázku jako YouTube video ve Full HD rozlišení.
-- [x] Při importu dokumentu uložit první samostatný odstavec do stylového promptu a zbývající obsah do textu písně.
-- [x] Přidat generování coveru skladby z názvu, promptu stylu a textu písně s uložením do externího úložiště.
-- [x] Přidat do Full HD YouTube videa pohyblivou zvukovou vlnu nad statický obrázek skladby.
-- [x] Přidat do YouTube videa čitelný název skladby a jméno interpreta Temney.
-- [x] Opravit zaseknuté Android sestavení po přidání nativního video rendereru.
+- [ ] Přidat export finální MP3 a přiřazeného obrázku jako YouTube video ve Full HD rozlišení.
+- [ ] Při importu dokumentu uložit první samostatný odstavec do stylového promptu a zbývající obsah do textu písně.
+- [ ] Přidat generování coveru skladby z názvu, promptu stylu a textu písně s uložením do externího úložiště.
