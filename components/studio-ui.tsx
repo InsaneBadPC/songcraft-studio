@@ -4,6 +4,13 @@ import { type ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useColors } from "@/hooks/use-colors";
+import { getApiBaseUrl } from "@/constants/oauth";
+
+export function resolveAssetUrl(uri?: string | null) {
+  if (!uri || /^(?:https?:|data:|file:|content:)/i.test(uri)) return uri ?? null;
+  const baseUrl = getApiBaseUrl();
+  return baseUrl ? `${baseUrl}${uri.startsWith("/") ? uri : `/${uri}`}` : uri;
+}
 
 export function StudioHeader({ eyebrow, title, action }: { eyebrow?: string; title: string; action?: ReactNode }) {
   const colors = useColors();
@@ -51,7 +58,8 @@ export function StatusChip({ state }: { state: "draft" | "complete" | "cloud" })
 
 export function CoverArt({ uri, title, size = 64 }: { uri?: string | null; title: string; size?: number }) {
   const colors = useColors();
-  if (uri) return <Image source={{ uri }} contentFit="cover" style={{ width: size, height: size, borderRadius: Math.max(10, size * 0.16), backgroundColor: colors.surface }} />;
+  const resolvedUri = resolveAssetUrl(uri);
+  if (resolvedUri) return <Image source={{ uri: resolvedUri }} contentFit="cover" style={{ width: size, height: size, borderRadius: Math.max(10, size * 0.16), backgroundColor: colors.surface }} />;
   return <View style={[styles.coverFallback, { width: size, height: size, borderRadius: Math.max(10, size * 0.16), backgroundColor: `${colors.primary}24` }]}><MaterialIcons name="music-note" size={size * 0.38} color={colors.primary} /><Text numberOfLines={1} style={[styles.coverLetter, { color: colors.primary }]}>{title.slice(0, 1).toUpperCase()}</Text></View>;
 }
 

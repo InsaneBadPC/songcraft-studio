@@ -38,3 +38,8 @@
 - [x] Přidat import textů z TXT, dokumentových souborů a Google Dokumentů do katalogu textů.
 - [x] Přidat import DOCX a hromadný import více textových souborů.
 - [x] Při importu rozpoznat a přehledně označit sekce písně, například sloku, refrén a bridge.
+- [x] Opravit okamžité zobrazení nahraného obalu v seznamu a detailu alba.
+- [ ] Připravit SongCraft Studio pro externí databázi, úložiště souborů, backend a webové hostování mimo interní infrastrukturu projektu.
+- [x] Založit externí schéma Supabase pro soukromá alba, texty, skladby, MP3 verze, rýmy a objektové úložiště.
+- [x] Ověřit RLS a přístupová pravidla externího Supabase projektu bezpečnostním auditem.
+- [ ] Přepojit klienta, přihlášení, zpracování MP3 a nasazení webu na externí infrastrukturu.
