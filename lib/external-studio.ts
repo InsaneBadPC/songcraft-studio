@@ -143,3 +143,78 @@ export async function callExternalMediaFunction(versionId: string, label: string
   return assert(data, error) as { path: string; fileName: string };
 }
 
+export async function updateExternalAlbum(input: { id: string; name?: string; description?: string | null; releaseYear?: number | null; coverStorageKey?: string | null; sortOrder?: number }) {
+  const { error } = await supabase.from("sc_albums").update({ name: input.name, description: input.description, release_year: input.releaseYear, cover_path: input.coverStorageKey, sort_order: input.sortOrder }).eq("id", input.id);
+  if (error) throw new Error(error.message);
+}
+
+export async function createExternalDocument(input: { title: string; albumId?: string | null; stylePrompt?: string | null; lyrics?: string | null; notes?: string | null; coverStorageKey?: string | null }) {
+  const user = await owner();
+  const { data, error } = await supabase.from("sc_lyrics").insert({ user_id: user.id, title: input.title, album_id: input.albumId ?? null, style_prompt: input.stylePrompt ?? null, lyrics: input.lyrics ?? null, notes: input.notes ?? null, cover_path: input.coverStorageKey ?? null }).select("id").single();
+  return assert(data, error).id;
+}
+
+export async function updateExternalDocument(input: { id: string; title?: string; albumId?: string | null; stylePrompt?: string | null; lyrics?: string | null; notes?: string | null; coverStorageKey?: string | null }) {
+  const { error } = await supabase.from("sc_lyrics").update({ title: input.title, album_id: input.albumId, style_prompt: input.stylePrompt, lyrics: input.lyrics, notes: input.notes, cover_path: input.coverStorageKey }).eq("id", input.id);
+  if (error) throw new Error(error.message);
+}
+
+export async function completeExternalDocument(id: string) {
+  const { data, error } = await supabase.rpc("sc_complete_lyric", { p_lyric_id: id });
+  return assert(data, error) as string;
+}
+
+export async function createExternalSong(input: { title: string; albumId?: string | null; stylePrompt?: string | null; lyrics?: string | null; notes?: string | null; coverStorageKey?: string | null; sourceDocumentId?: string | null }) {
+  const user = await owner();
+  const { data, error } = await supabase.from("sc_songs").insert({ user_id: user.id, title: input.title, album_id: input.albumId ?? null, source_lyric_id: input.sourceDocumentId ?? null, style_prompt: input.stylePrompt ?? null, lyrics: input.lyrics ?? null, notes: input.notes ?? null, cover_path: input.coverStorageKey ?? null }).select("id").single();
+  return assert(data, error).id;
+}
+
+export async function updateExternalSong(input: { id: string; title?: string; albumId?: string | null; stylePrompt?: string | null; lyrics?: string | null; notes?: string | null; coverStorageKey?: string | null }) {
+  const { error } = await supabase.from("sc_songs").update({ title: input.title, album_id: input.albumId, style_prompt: input.stylePrompt, lyrics: input.lyrics, notes: input.notes, cover_path: input.coverStorageKey }).eq("id", input.id);
+  if (error) throw new Error(error.message);
+}
+
+export type ExternalVersionInput = {
+  songId: string;
+  label: string;
+  originalFileName: string;
+  storageKey: string;
+  mimeType: string;
+  byteSize: number;
+  rating?: number;
+  isPrimary?: boolean;
+  id3Title?: string | null;
+  id3Artist?: string | null;
+  id3Album?: string | null;
+  id3TrackNumber?: string | null;
+  id3Year?: string | null;
+  id3Genre?: string | null;
+  id3Comment?: string | null;
+};
+
+export async function createExternalVersion(input: ExternalVersionInput) {
+  const user = await owner();
+  const { data, error } = await supabase.from("sc_audio_versions").insert({ user_id: user.id, song_id: input.songId, label: input.label, original_file_name: input.originalFileName, storage_path: input.storageKey, mime_type: input.mimeType, byte_size: input.byteSize, rating: input.rating ?? 0, is_primary: input.isPrimary ?? false, id3_title: input.id3Title ?? null, id3_artist: input.id3Artist ?? "Temney", id3_album: input.id3Album ?? null, id3_track_number: input.id3TrackNumber ?? null, id3_year: input.id3Year ?? null, id3_genre: input.id3Genre ?? null, id3_comment: input.id3Comment ?? null }).select("id").single();
+  return assert(data, error).id;
+}
+
+export async function updateExternalVersion(input: { id: string; label?: string; rating?: number; id3Title?: string | null; id3Artist?: string | null; id3Album?: string | null; id3TrackNumber?: string | null; id3Year?: string | null; id3Genre?: string | null; id3Comment?: string | null }) {
+  const { error } = await supabase.from("sc_audio_versions").update({ label: input.label, rating: input.rating, id3_title: input.id3Title, id3_artist: input.id3Artist, id3_album: input.id3Album, id3_track_number: input.id3TrackNumber, id3_year: input.id3Year, id3_genre: input.id3Genre, id3_comment: input.id3Comment }).eq("id", input.id);
+  if (error) throw new Error(error.message);
+}
+
+export async function setExternalPrimaryVersion(id: string) {
+  const { error } = await supabase.rpc("sc_set_version_state", { p_version_id: id, p_final: false });
+  if (error) throw new Error(error.message);
+}
+
+export async function setExternalFinalVersion(id: string) {
+  const { error } = await supabase.rpc("sc_set_version_state", { p_version_id: id, p_final: true });
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteExternalVersion(id: string) {
+  const { error } = await supabase.from("sc_audio_versions").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
