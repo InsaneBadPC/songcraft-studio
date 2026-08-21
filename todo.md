@@ -51,3 +51,4 @@
 - [x] Přidat export finální MP3 a přiřazeného obrázku jako YouTube video ve Full HD rozlišení.
 - [x] Při importu dokumentu uložit první samostatný odstavec do stylového promptu a zbývající obsah do textu písně.
 - [x] Přidat generování coveru skladby z názvu, promptu stylu a textu písně s uložením do externího úložiště.
+- [x] Přidat do Full HD YouTube videa pohyblivou zvukovou vlnu nad statický obrázek skladby.
