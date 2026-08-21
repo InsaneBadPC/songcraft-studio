@@ -194,6 +194,21 @@ export async function checkExternalCoverGeneration(entityType: "song" | "lyric",
   return assert(data, error) as ExternalCoverGeneration;
 }
 
+export type ExternalYoutubeVideo =
+  | { status: "processing"; jobId: string; message?: string }
+  | { status: "completed"; url: string }
+  | { status: "failed"; error: string };
+
+export async function createExternalYoutubeVideo(songId: string, versionId: string) {
+  const { data, error } = await supabase.functions.invoke("songcraft-youtube", { body: { action: "create", songId, versionId } });
+  return assert(data, error) as ExternalYoutubeVideo;
+}
+
+export async function checkExternalYoutubeVideo(songId: string, versionId: string, jobId: string) {
+  const { data, error } = await supabase.functions.invoke("songcraft-youtube", { body: { action: "check", songId, versionId, jobId } });
+  return assert(data, error) as ExternalYoutubeVideo;
+}
+
 export async function updateExternalAlbum(input: { id: string; name?: string; description?: string | null; releaseYear?: number | null; coverStorageKey?: string | null; sortOrder?: number }) {
   const { error } = await supabase.from("sc_albums").update({ name: input.name, description: input.description, release_year: input.releaseYear, cover_path: input.coverStorageKey, sort_order: input.sortOrder }).eq("id", input.id);
   if (error) throw new Error(error.message);
