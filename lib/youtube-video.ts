@@ -15,7 +15,7 @@ function absoluteUrl(url: string) {
   return apiBaseUrl ? `${apiBaseUrl}${url}` : url;
 }
 
-export async function createAndShareYoutubeVideo(input: { audioUrl: string; coverUrl: string; title: string }) {
+export async function createAndShareYoutubeVideo(input: { audioUrl: string; coverUrl: string; title: string; artist?: string }) {
   if (Platform.OS === "web") {
     throw new Error("Video se vytváří přímo v Android APK. Otevři SongCraft Studio v telefonu a spusť export tam.");
   }
@@ -33,7 +33,7 @@ export async function createAndShareYoutubeVideo(input: { audioUrl: string; cove
       FileSystem.downloadAsync(absoluteUrl(input.coverUrl), coverPath),
       FileSystem.downloadAsync(absoluteUrl(input.audioUrl), audioPath),
     ]);
-    const result = await execute(youtubeFfmpegArgs(coverPath, audioPath, outputPath));
+    const result = await execute(youtubeFfmpegArgs(coverPath, audioPath, outputPath, input.title, input.artist));
     if (result.returnCode !== 0) throw new Error("Telefon nemohl dokončit vytvoření MP4. Zkus to znovu s jiným coverem nebo kratší MP3.");
     const output = await FileSystem.getInfoAsync(outputPath);
     if (!output.exists) throw new Error("Video nebylo po renderu nalezeno.");
