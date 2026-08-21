@@ -33,3 +33,4 @@
 - [x] Přidat jednoznačné uložení hotové MP3 do telefonu a systémové sdílení z detailu skladby i YouTube exportu.
 - [x] Přidat kompletní export knihovny obsahující texty, prompty, alba, obrázky, MP3 a metadata.
 - [x] Přidat průběh vytváření exportního archivu a možnost exportovat samostatné album.
+- [x] Přidat český hledač rýmů s vložením vybraného rýmu do editoru textů a skladeb.

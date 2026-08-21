@@ -41,3 +41,7 @@ V editoru verze MP3 a v YouTube exportu je nyní dostupná akce **Uložit MP3 do
 ## Průběh a export alb
 
 Nastavení nyní při exportu jasně zobrazuje, zda aplikace shromažďuje soubory nebo už otevírá systémové uložení archivu. Pod kompletní zálohou je seznam vytvořených alb; zvolením libovolného alba vznikne samostatný ZIP s jeho texty, obrázky, skladbami, MP3 verzemi a metadaty. Závěrečné kontroly `pnpm check`, `pnpm test` a `pnpm lint` proběhly bez chyb.
+
+## Hledač českých rýmů
+
+Editor textu i přímý editor skladby nyní obsahují tlačítko **Hledač rýmů**. Po zadání slova panel nabídne rýmy z lokálního českého slovníku, rozlišuje přesnější a volnější shodu koncovek a vybraný návrh vloží na konec rozepsaného textu. Hledání funguje bez síťového připojení, cizího účtu i externí služby. Testy ověřují normalizaci české diakritiky a nalezení běžného rýmu; společně s typovou a lint kontrolou prošly úspěšně.

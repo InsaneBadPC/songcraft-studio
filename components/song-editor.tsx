@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { IconButton, LoadingState, SectionTitle } from "@/components/studio-ui";
+import { RhymeFinder } from "@/components/rhyme-finder";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
@@ -55,6 +56,7 @@ export function SongEditor({ songId }: { songId?: number }) {
     <SectionTitle title="Obsah propojeného textu" />
     <Field label="1. Prompt pro styl" helper="Například žánr, tempo, nálada, nástroje a typ hlasu." value={form.stylePrompt} onChangeText={(stylePrompt) => setForm((current) => ({ ...current, stylePrompt }))} placeholder="Atmosférický pop, 96 BPM, jemný mužský vokál…" multiline colors={colors} />
     <Field label="2. Samotný text písně" value={form.lyrics} onChangeText={(lyrics) => setForm((current) => ({ ...current, lyrics }))} placeholder="[Sloka 1]\n…" multiline tall colors={colors} />
+    <RhymeFinder onInsert={(word) => setForm((current) => ({ ...current, lyrics: `${current.lyrics}${current.lyrics && !/\s$/.test(current.lyrics) ? " " : ""}${word}` }))} />
     <Field label="Poznámky" value={form.notes} onChangeText={(notes) => setForm((current) => ({ ...current, notes }))} placeholder="Aranž, reference, nápady na klip…" multiline colors={colors} />
     <Pressable onPress={() => void save()} style={({ pressed }) => [styles.saveButton, { backgroundColor: colors.primary, opacity: saving || pressed ? 0.68 : 1 }]}><MaterialIcons name="save" size={20} color="#141317" /><Text style={styles.saveButtonText}>{saving ? "Ukládám skladbu…" : "Uložit položku skladby"}</Text></Pressable>
   </ScrollView></ScreenContainer>;

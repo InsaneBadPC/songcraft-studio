@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { IconButton, LoadingState, PrimaryButton, SectionTitle, StatusChip } from "@/components/studio-ui";
+import { RhymeFinder } from "@/components/rhyme-finder";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
@@ -60,6 +61,7 @@ export default function TextEditorScreen() {
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.albumChips}><AlbumChip active={!form.albumId} label="Bez alba" onPress={() => setForm((current) => ({ ...current, albumId: null }))} />{snapshot.data?.albums.map((album) => <AlbumChip key={album.id} active={form.albumId === album.id} label={album.name} onPress={() => setForm((current) => ({ ...current, albumId: album.id }))} />)}</ScrollView>
     <Field label="Prompt stylu pro hudební generátor" value={form.stylePrompt} onChangeText={(stylePrompt) => setForm((current) => ({ ...current, stylePrompt }))} placeholder="Žánr, tempo, nálada, nástroje, hlas…" multiline colors={colors} helper="V hotové skladbě jej zkopíruješ jedním klepnutím." />
     <Field label="Text písně" value={form.lyrics} onChangeText={(lyrics) => setForm((current) => ({ ...current, lyrics }))} placeholder="[Verse]\n…" multiline tall colors={colors} />
+    <RhymeFinder onInsert={(word) => setForm((current) => ({ ...current, lyrics: `${current.lyrics}${current.lyrics && !/\s$/.test(current.lyrics) ? " " : ""}${word}` }))} />
     <Field label="Poznámky k produkci" value={form.notes} onChangeText={(notes) => setForm((current) => ({ ...current, notes }))} placeholder="Aranž, reference, nápady na klip…" multiline colors={colors} />
     <View style={[styles.completeBox, { backgroundColor: `${colors.success}16`, borderColor: `${colors.success}55` }]}><MaterialIcons name="check-circle" size={23} color={colors.success} /><View style={styles.completeCopy}><Text style={[styles.completeTitle, { color: colors.foreground }]}>Připraveno pro knihovnu?</Text><Text style={[styles.completeText, { color: colors.muted }]}>Označením zůstane dokument zachovaný a vytvoří se katalogová skladba.</Text></View></View><PrimaryButton label={document?.status === "complete" ? "Aktualizovat hotovou skladbu" : "Označit jako hotové"} icon="task-alt" onPress={() => void markComplete()} disabled={saving || complete.isPending} />
   </ScrollView></ScreenContainer>;
