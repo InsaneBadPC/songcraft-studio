@@ -53,3 +53,4 @@
 - [x] Přidat generování coveru skladby z názvu, promptu stylu a textu písně s uložením do externího úložiště.
 - [x] Přidat do Full HD YouTube videa pohyblivou zvukovou vlnu nad statický obrázek skladby.
 - [x] Přidat do YouTube videa čitelný název skladby a jméno interpreta Temney.
+- [x] Opravit zaseknuté Android sestavení po přidání nativního video rendereru.
