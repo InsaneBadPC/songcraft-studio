@@ -10,6 +10,7 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { systemRouter } from "./_core/systemRouter";
 import { storageGetSignedUrl, storagePut } from "./storage";
 import { COOKIE_NAME } from "../shared/const.js";
+import { googleDocumentId } from "../lib/text-import";
 
 const nullableText = (max: number) => z.string().max(max).nullable().optional();
 const nullableId = z.number().int().positive().nullable().optional();
@@ -63,6 +64,18 @@ export const appRouter = router({
     createDocument: protectedProcedure
       .input(z.object({ title: z.string().trim().min(1).max(255), albumId: nullableId, stylePrompt: nullableText(30000), lyrics: nullableText(100000), notes: nullableText(30000), coverStorageKey: nullableText(512), coverUrl: nullableText(1024) }))
       .mutation(({ ctx, input }) => db.createDocument({ ...input, userId: ctx.user.id })),
+    importGoogleDocument: protectedProcedure
+      .input(z.object({ url: z.string().url().max(2048), title: z.string().trim().min(1).max(255) }))
+      .mutation(async ({ ctx, input }) => {
+        const id = googleDocumentId(input.url);
+        if (!id) throw new Error("Vlož platný odkaz na Google Dokument.");
+        const response = await fetch(`https://docs.google.com/document/d/${id}/export?format=txt`);
+        if (!response.ok) throw new Error("Dokument se nepodařilo načíst. Nastav u něj sdílení pro každého s odkazem.");
+        const lyrics = (await response.text()).trim();
+        if (!lyrics) throw new Error("Google Dokument neobsahuje žádný importovatelný text.");
+        if (lyrics.length > 100000) throw new Error("Google Dokument je pro jeden text příliš dlouhý.");
+        return db.createDocument({ userId: ctx.user.id, title: input.title, albumId: null, stylePrompt: null, lyrics, notes: "Importováno z Google Dokumentu", coverStorageKey: null, coverUrl: null });
+      }),
     updateDocument: protectedProcedure
       .input(z.object({ id: z.number().int().positive(), title: z.string().trim().min(1).max(255).optional(), albumId: nullableId, stylePrompt: nullableText(30000), lyrics: nullableText(100000), notes: nullableText(30000), coverStorageKey: nullableText(512), coverUrl: nullableText(1024) }))
       .mutation(({ ctx, input }) => {

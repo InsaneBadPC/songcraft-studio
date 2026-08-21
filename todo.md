@@ -35,3 +35,4 @@
 - [x] Přidat průběh vytváření exportního archivu a možnost exportovat samostatné album.
 - [x] Přidat český hledač rýmů s vložením vybraného rýmu do editoru textů a skladeb.
 - [x] Přidat správu vlastních slov, která se uloží do cloudového slovníku a použijí se v hledači rýmů.
+- [x] Přidat import textů z TXT, dokumentových souborů a Google Dokumentů do katalogu textů.

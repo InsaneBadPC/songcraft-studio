@@ -49,3 +49,7 @@ Editor textu i přímý editor skladby nyní obsahují tlačítko **Hledač rým
 ## Soukromý slovník autora
 
 Panel hledače rýmů nyní umožňuje přidat hledané slovo do části **Můj slovník**. Vlastní slova se ukládají ke konkrétnímu přihlášenému uživateli a automaticky se přidávají do budoucích návrhů rýmů na telefonu i ve webovém rozhraní. Klepnutím na křížek u slova je možné položku ze slovníku odebrat. Testy ověřují, že vlastní slovo skutečně vstoupí do výsledků hledání; kontrola typů, testy i lint proběhly bez chyb.
+
+## Import textů
+
+Katalog **Texty** nyní nabízí akci **Importovat**. Uživatel může vybrat soubor TXT, Markdown, HTML nebo CSV; aplikace převede jeho obsah na čitelný text, založí nový koncept a otevře ho v editoru. Druhá cesta přijímá odkaz na Google Dokument a importuje jeho text do nového konceptu. Protože aplikace nevyžaduje externí přihlášení ke Googlu, musí být tento dokument nastavený na „kdokoli s odkazem může zobrazit“. Testy ověřují převod HTML na text a rozpoznání platného odkazu Google Dokumentu; `pnpm check`, testy i lint prošly.
