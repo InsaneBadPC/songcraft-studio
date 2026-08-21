@@ -37,3 +37,7 @@ Nedokončené propojení s Google Drivem bylo zrušeno. SongCraft Studio dále p
 ## Stažení souborů a kompletní záloha
 
 V editoru verze MP3 a v YouTube exportu je nyní dostupná akce **Uložit MP3 do telefonu / sdílet**. V nativní aplikaci stáhne hotovou kopii do dočasného úložiště a otevře systémovou nabídku, kde ji lze uložit do Souborů či odeslat do jiné aplikace; webová verze spustí běžné stažení prohlížeče. Nastavení obsahuje **Exportovat celou knihovnu**, který vytvoří ZIP se souhrnným JSON manifestem, texty, prompty, poznámkami, alby, obrázky, všemi MP3 verzemi a jejich metadaty. Pro bezpečný běh exportu je velikost ZIP omezena na 300 MB.
+
+## Průběh a export alb
+
+Nastavení nyní při exportu jasně zobrazuje, zda aplikace shromažďuje soubory nebo už otevírá systémové uložení archivu. Pod kompletní zálohou je seznam vytvořených alb; zvolením libovolného alba vznikne samostatný ZIP s jeho texty, obrázky, skladbami, MP3 verzemi a metadaty. Závěrečné kontroly `pnpm check`, `pnpm test` a `pnpm lint` proběhly bez chyb.

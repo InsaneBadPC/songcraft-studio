@@ -144,17 +144,25 @@ export const appRouter = router({
         await db.updateAudioVersion(ctx.user.id, version.id, { label: input.label, originalFileName: finalName, storageKey: stored.key, storageUrl: stored.url, taggedStorageKey: stored.key, taggedStorageUrl: stored.url, id3Title: song.title, id3Artist: "Temney", id3Album: album?.name ?? null, id3Comment: input.note ?? version.id3Comment });
         return { ...stored, fileName: finalName };
       }),
-    exportWholeLibrary: protectedProcedure.mutation(async ({ ctx }) => {
+    exportWholeLibrary: protectedProcedure.input(z.object({ albumId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
       const snapshot = await db.getStudioSnapshot(ctx.user.id);
+      const selectedAlbum = input.albumId ? snapshot.albums.find((album) => album.id === input.albumId) : undefined;
+      if (input.albumId && !selectedAlbum) throw new Error("Vybrané album nebylo nalezeno.");
+      const albums = selectedAlbum ? [selectedAlbum] : snapshot.albums;
+      const documents = selectedAlbum ? snapshot.documents.filter((document) => document.albumId === selectedAlbum.id) : snapshot.documents;
+      const songs = selectedAlbum ? snapshot.songs.filter((song) => song.albumId === selectedAlbum.id) : snapshot.songs;
+      const songIds = new Set(songs.map((song) => song.id));
+      const versions = snapshot.versions.filter((version) => songIds.has(version.songId));
       const zip = new JSZip();
       const createdAt = new Date().toISOString();
-      zip.file("SongCraft-Studio-export.json", JSON.stringify({ exportedAt: createdAt, artist: "Temney", ...snapshot }, null, 2));
-      zip.file("README.txt", "SongCraft Studio — kompletní export\n\nTexty obsahují prompt pro styl, samotný text a poznámky. Skladby obsahují MP3 verze s upravenými ID3 tagy, obrázky a metadata.\n");
-      for (const album of snapshot.albums) {
+      const exportTitle = selectedAlbum ? `Album ${selectedAlbum.name}` : "Kompletní knihovna";
+      zip.file("SongCraft-Studio-export.json", JSON.stringify({ exportedAt: createdAt, artist: "Temney", exportTitle, albums, documents, songs, versions }, null, 2));
+      zip.file("README.txt", `SongCraft Studio — ${exportTitle}\n\nTexty obsahují prompt pro styl, samotný text a poznámky. Skladby obsahují MP3 verze s upravenými ID3 tagy, obrázky a metadata.\n`);
+      for (const album of albums) {
         const albumFolder = `Alba/${safeFileName(album.name)}-${album.id}`;
         await addStoredFile(zip, album.coverStorageKey, `${albumFolder}/obal${fileExtension(album.coverStorageKey ?? "", ".jpg")}`);
       }
-      for (const document of snapshot.documents) {
+      for (const document of documents) {
         const documentFolder = `Texty/${safeFileName(document.title)}-${document.id}`;
         zip.file(`${documentFolder}/text-pisne.txt`, document.lyrics ?? "");
         zip.file(`${documentFolder}/prompt-stylu.txt`, document.stylePrompt ?? "");
@@ -162,15 +170,15 @@ export const appRouter = router({
         zip.file(`${documentFolder}/metadata.json`, JSON.stringify(document, null, 2));
         await addStoredFile(zip, document.coverStorageKey, `${documentFolder}/obrazek${fileExtension(document.coverStorageKey ?? "", ".jpg")}`);
       }
-      for (const song of snapshot.songs) {
-        const album = snapshot.albums.find((entry) => entry.id === song.albumId);
+      for (const song of songs) {
+        const album = albums.find((entry) => entry.id === song.albumId) ?? snapshot.albums.find((entry) => entry.id === song.albumId);
         const songFolder = `Skladby/${safeFileName(album?.name ?? "Single")}/${safeFileName(song.title)}-${song.id}`;
         zip.file(`${songFolder}/text-pisne.txt`, song.lyrics ?? "");
         zip.file(`${songFolder}/prompt-stylu.txt`, song.stylePrompt ?? "");
         zip.file(`${songFolder}/poznamky.txt`, song.notes ?? "");
         zip.file(`${songFolder}/metadata.json`, JSON.stringify(song, null, 2));
         await addStoredFile(zip, song.coverStorageKey ?? album?.coverStorageKey, `${songFolder}/obrazek${fileExtension(song.coverStorageKey ?? album?.coverStorageKey ?? "", ".jpg")}`);
-        const songVersions = snapshot.versions.filter((version) => version.songId === song.id);
+        const songVersions = versions.filter((version) => version.songId === song.id);
         for (const version of songVersions) {
           const versionFile = safeFileName(version.originalFileName || `Temney-${song.title}-${version.label}.mp3`);
           await addStoredFile(zip, version.taggedStorageKey ?? version.storageKey, `${songFolder}/MP3/${versionFile}`);
@@ -179,7 +187,7 @@ export const appRouter = router({
       }
       const archive = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
       if (archive.byteLength > 300 * 1024 * 1024) throw new Error("Kompletní export je větší než 300 MB. Stáhni prosím skladby po částech z YouTube exportu.");
-      const fileName = `SongCraft-Studio-kompletni-knihovna-${createdAt.slice(0, 10)}.zip`;
+      const fileName = selectedAlbum ? `SongCraft-Studio-album-${safeFileName(selectedAlbum.name)}-${createdAt.slice(0, 10)}.zip` : `SongCraft-Studio-kompletni-knihovna-${createdAt.slice(0, 10)}.zip`;
       const stored = await storagePut(`songcraft/${ctx.user.id}/exports/${fileName}`, archive, "application/zip");
       return { ...stored, fileName, byteSize: archive.byteLength };
     }),
