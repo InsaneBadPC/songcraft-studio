@@ -45,3 +45,7 @@ Nastavení nyní při exportu jasně zobrazuje, zda aplikace shromažďuje soubo
 ## Hledač českých rýmů
 
 Editor textu i přímý editor skladby nyní obsahují tlačítko **Hledač rýmů**. Po zadání slova panel nabídne rýmy z lokálního českého slovníku, rozlišuje přesnější a volnější shodu koncovek a vybraný návrh vloží na konec rozepsaného textu. Hledání funguje bez síťového připojení, cizího účtu i externí služby. Testy ověřují normalizaci české diakritiky a nalezení běžného rýmu; společně s typovou a lint kontrolou prošly úspěšně.
+
+## Soukromý slovník autora
+
+Panel hledače rýmů nyní umožňuje přidat hledané slovo do části **Můj slovník**. Vlastní slova se ukládají ke konkrétnímu přihlášenému uživateli a automaticky se přidávají do budoucích návrhů rýmů na telefonu i ve webovém rozhraní. Klepnutím na křížek u slova je možné položku ze slovníku odebrat. Testy ověřují, že vlastní slovo skutečně vstoupí do výsledků hledání; kontrola typů, testy i lint proběhly bez chyb.

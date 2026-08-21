@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import {
   albums,
   audioVersions,
+  customRhymeWords,
   type InsertAlbum,
   type InsertAudioVersion,
   type InsertLyricDocument,
@@ -63,13 +64,14 @@ export async function getUserByOpenId(openId: string) {
 
 export async function getStudioSnapshot(userId: number) {
   const db = await databaseOrThrow();
-  const [albumRows, documentRows, songRows, versionRows] = await Promise.all([
+  const [albumRows, documentRows, songRows, versionRows, rhymeWordRows] = await Promise.all([
     db.select().from(albums).where(eq(albums.userId, userId)).orderBy(asc(albums.sortOrder), asc(albums.name)),
     db.select().from(lyricDocuments).where(eq(lyricDocuments.userId, userId)).orderBy(desc(lyricDocuments.updatedAt)),
     db.select().from(songs).where(eq(songs.userId, userId)).orderBy(desc(songs.completedAt)),
     db.select().from(audioVersions).where(eq(audioVersions.userId, userId)).orderBy(desc(audioVersions.isFinal), desc(audioVersions.isPrimary), desc(audioVersions.rating), asc(audioVersions.label)),
+    db.select().from(customRhymeWords).where(eq(customRhymeWords.userId, userId)).orderBy(asc(customRhymeWords.word)),
   ]);
-  return { albums: albumRows, documents: documentRows, songs: songRows, versions: versionRows };
+  return { albums: albumRows, documents: documentRows, songs: songRows, versions: versionRows, rhymeWords: rhymeWordRows };
 }
 
 export async function createAlbum(data: InsertAlbum) {
@@ -166,4 +168,17 @@ export async function getSong(userId: number, id: number) {
 export async function getAlbum(userId: number, id: number) {
   const db = await databaseOrThrow();
   return (await db.select().from(albums).where(and(eq(albums.id, id), eq(albums.userId, userId))).limit(1))[0];
+}
+
+export async function createCustomRhymeWord(userId: number, word: string) {
+  const db = await databaseOrThrow();
+  const existing = (await db.select().from(customRhymeWords).where(and(eq(customRhymeWords.userId, userId), eq(customRhymeWords.word, word))).limit(1))[0];
+  if (existing) return existing.id;
+  const result = await db.insert(customRhymeWords).values({ userId, word });
+  return Number(result[0].insertId);
+}
+
+export async function deleteCustomRhymeWord(userId: number, id: number) {
+  const db = await databaseOrThrow();
+  await db.delete(customRhymeWords).where(and(eq(customRhymeWords.id, id), eq(customRhymeWords.userId, userId)));
 }

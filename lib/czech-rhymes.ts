@@ -26,13 +26,14 @@ function vowelEnding(value: string) {
   return lastVowel ? value.slice(lastVowel.index) : value.slice(-2);
 }
 
-export function findCzechRhymes(query: string, limit = 24): RhymeSuggestion[] {
+export function findCzechRhymes(query: string, limit = 24, customWords: string[] = []): RhymeSuggestion[] {
   const needle = normalizeCzechWord(query);
   if (needle.length < 2) return [];
   const exactEnd = needle.slice(-Math.min(3, needle.length));
   const looseEnd = needle.slice(-2);
   const vowelEnd = vowelEnding(needle);
-  return uniqueWords
+  const candidateWords = Array.from(new Set([...uniqueWords, ...customWords.map((word) => word.toLocaleLowerCase("cs-CZ"))]));
+  return candidateWords
     .filter((word) => normalizeCzechWord(word) !== needle)
     .map((word) => {
       const comparable = normalizeCzechWord(word);

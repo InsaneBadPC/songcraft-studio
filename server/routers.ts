@@ -13,6 +13,7 @@ import { COOKIE_NAME } from "../shared/const.js";
 
 const nullableText = (max: number) => z.string().max(max).nullable().optional();
 const nullableId = z.number().int().positive().nullable().optional();
+const rhymeWordSchema = z.string().trim().min(2).max(100).regex(/^[a-zA-ZáčďéěíňóřšťúůýžÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ-]+$/, "Zadej jedno české slovo bez mezer.");
 const safeFileName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-180) || "file";
 const fileExtension = (name: string, fallback: string) => {
   const extension = name.split(".").pop()?.replace(/[^a-zA-Z0-9]/g, "");
@@ -48,6 +49,8 @@ export const appRouter = router({
   }),
   studio: router({
     snapshot: protectedProcedure.query(({ ctx }) => db.getStudioSnapshot(ctx.user.id)),
+    createCustomRhymeWord: protectedProcedure.input(z.object({ word: rhymeWordSchema })).mutation(({ ctx, input }) => db.createCustomRhymeWord(ctx.user.id, input.word.toLocaleLowerCase("cs-CZ"))),
+    deleteCustomRhymeWord: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ ctx, input }) => db.deleteCustomRhymeWord(ctx.user.id, input.id)),
     createAlbum: protectedProcedure
       .input(z.object({ name: z.string().trim().min(1).max(255), description: nullableText(5000), releaseYear: z.number().int().min(1900).max(2200).nullable().optional(), coverStorageKey: nullableText(512), coverUrl: nullableText(1024) }))
       .mutation(({ ctx, input }) => db.createAlbum({ ...input, userId: ctx.user.id })),

@@ -10,4 +10,8 @@ describe("český hledač rýmů", () => {
   it("najde přesný rým pro běžné slovo", () => {
     expect(findCzechRhymes("noc").map((suggestion) => suggestion.word)).toContain("moc");
   });
+
+  it("použije slovo z osobního slovníku při hledání", () => {
+    expect(findCzechRhymes("láska", 24, ["páska"]).map((suggestion) => suggestion.word)).toContain("páska");
+  });
 });

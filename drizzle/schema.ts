@@ -91,6 +91,13 @@ export const audioVersions = mysqlTable("audioVersions", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const customRhymeWords = mysqlTable("customRhymeWords", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  word: varchar("word", { length: 100 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Album = typeof albums.$inferSelect;
@@ -101,3 +108,5 @@ export type Song = typeof songs.$inferSelect;
 export type InsertSong = typeof songs.$inferInsert;
 export type AudioVersion = typeof audioVersions.$inferSelect;
 export type InsertAudioVersion = typeof audioVersions.$inferInsert;
+export type CustomRhymeWord = typeof customRhymeWords.$inferSelect;
+export type InsertCustomRhymeWord = typeof customRhymeWords.$inferInsert;

@@ -34,3 +34,4 @@
 - [x] Přidat kompletní export knihovny obsahující texty, prompty, alba, obrázky, MP3 a metadata.
 - [x] Přidat průběh vytváření exportního archivu a možnost exportovat samostatné album.
 - [x] Přidat český hledač rýmů s vložením vybraného rýmu do editoru textů a skladeb.
+- [x] Přidat správu vlastních slov, která se uloží do cloudového slovníku a použijí se v hledači rýmů.
