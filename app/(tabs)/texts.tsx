@@ -4,7 +4,7 @@ import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } fr
 
 import { CoverArt, EmptyState, IconButton, LoadingState, SectionTitle, StatusChip, StudioHeader, formatDate } from "@/components/studio-ui";
 import { ScreenContainer } from "@/components/screen-container";
-import { startOAuthLogin } from "@/constants/oauth";
+import { startPrivateLogin } from "@/constants/oauth";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
@@ -19,7 +19,7 @@ export default function TextsScreen() {
   const snapshot = trpc.studio.snapshot.useQuery(undefined, { enabled: isAuthenticated });
   const records = useMemo(() => (snapshot.data?.documents ?? []).filter((document) => (!albumId || document.albumId === albumId) && `${document.title} ${document.lyrics ?? ""} ${document.stylePrompt ?? ""}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())), [albumId, search, snapshot.data?.documents]);
   if (loading || (isAuthenticated && snapshot.isLoading)) return <ScreenContainer><LoadingState /></ScreenContainer>;
-  if (!isAuthenticated) return <ScreenContainer className="p-5 justify-center"><EmptyState icon="lock" title="Přihlášení je potřeba" text="Texty se ukládají do soukromého cloudového prostoru." action={<Pressable onPress={() => void startOAuthLogin()} style={[styles.login, { backgroundColor: colors.primary }]}><Text style={styles.loginText}>Přihlásit se</Text></Pressable>} /></ScreenContainer>;
+  if (!isAuthenticated) return <ScreenContainer className="p-5 justify-center"><EmptyState icon="lock" title="Přihlášení je potřeba" text="Texty se ukládají do soukromého cloudového prostoru." action={<Pressable onPress={() => void startPrivateLogin()} style={[styles.login, { backgroundColor: colors.primary }]}><Text style={styles.loginText}>Přihlásit se</Text></Pressable>} /></ScreenContainer>;
   return <ScreenContainer className="px-5"><FlatList data={records} keyExtractor={(item) => String(item.id)} showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} ListHeaderComponent={<>
     <StudioHeader eyebrow="Kreativní dílna" title="Texty" action={<View style={styles.headerActions}><TextImporter /><IconButton label="Nový text" icon="add" onPress={() => router.push("/text/new" as never)} /></View>} />
     <View style={[styles.search, { backgroundColor: colors.surface, borderColor: colors.border }]}><MaterialIcons name="search" size={20} color={colors.muted} /><TextInput value={search} onChangeText={setSearch} placeholder="Hledat v názvech, textech a promptech" placeholderTextColor={colors.muted} style={[styles.searchInput, { color: colors.foreground }]} /></View>

@@ -5,9 +5,6 @@ export async function startPrivateLogin(): Promise<void> {
   router.push("/auth" as never);
 }
 
-/** Compatibility alias for older screens; it no longer invokes Manus OAuth. */
-export const startOAuthLogin = startPrivateLogin;
-
 /** Retained only for legacy internal helpers that do not call a remote OAuth flow. */
 export const getApiBaseUrl = () => "";
 

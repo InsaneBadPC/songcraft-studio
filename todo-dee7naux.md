@@ -5,3 +5,4 @@
 - [x] Zajistit bezpečné ukládání hesel a oddělení dat mezi jednotlivými účty.
 - [x] Najít a opravit regresi Android sestavení po zavedení soukromého přihlášení bez omezení funkcí aplikace.
 - [x] Prověřit a odstranit zbytkové vazby na původní infrastrukturu bez změny funkcí soukromých účtů.
+- [x] Opravit vzdálené Android sestavení bez změny soukromého přihlášení a izolace dat.

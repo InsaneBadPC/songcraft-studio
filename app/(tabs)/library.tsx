@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 
 import { CoverArt, EmptyState, IconButton, LoadingState, SectionTitle, StudioHeader } from "@/components/studio-ui";
 import { ScreenContainer } from "@/components/screen-container";
-import { startOAuthLogin } from "@/constants/oauth";
+import { startPrivateLogin } from "@/constants/oauth";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
@@ -19,7 +19,7 @@ export default function LibraryScreen() {
   const [finalOnly, setFinalOnly] = useState(false);
   const songs = useMemo(() => { const versions = snapshot.data?.versions ?? []; return (snapshot.data?.songs ?? []).filter((song) => (!albumId || song.albumId === albumId) && song.title.toLowerCase().includes(search.toLowerCase()) && (!finalOnly || versions.some((version) => version.songId === song.id && version.isFinal))); }, [albumId, finalOnly, search, snapshot.data?.songs, snapshot.data?.versions]);
   if (loading || (isAuthenticated && snapshot.isLoading)) return <ScreenContainer><LoadingState label="Načítám knihovnu…" /></ScreenContainer>;
-  if (!isAuthenticated) return <ScreenContainer className="p-5 justify-center"><EmptyState icon="lock" title="Knihovna je soukromá" text="Přihlas se, aby se hotové skladby načetly z tvého cloudu." action={<Pressable onPress={() => void startOAuthLogin()} style={[styles.login, { backgroundColor: colors.primary }]}><Text style={styles.loginText}>Přihlásit se</Text></Pressable>} /></ScreenContainer>;
+  if (!isAuthenticated) return <ScreenContainer className="p-5 justify-center"><EmptyState icon="lock" title="Knihovna je soukromá" text="Přihlas se, aby se hotové skladby načetly z tvého cloudu." action={<Pressable onPress={() => void startPrivateLogin()} style={[styles.login, { backgroundColor: colors.primary }]}><Text style={styles.loginText}>Přihlásit se</Text></Pressable>} /></ScreenContainer>;
   return <ScreenContainer className="px-5"><FlatList data={songs} keyExtractor={(item) => String(item.id)} showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} ListHeaderComponent={<>
     <StudioHeader eyebrow="Databáze skladeb" title="Knihovna skladeb" action={<View style={styles.headerActions}><IconButton label="YouTube export" icon="video-library" onPress={() => router.push("/export/youtube" as never)} /><IconButton label="Nová skladba" icon="add" onPress={() => router.push("/song/new" as never)} /></View>} />
     <View style={[styles.search, { backgroundColor: colors.surface, borderColor: colors.border }]}><MaterialIcons name="search" size={20} color={colors.muted} /><TextInput value={search} onChangeText={setSearch} placeholder="Hledat hotovou skladbu" placeholderTextColor={colors.muted} style={[styles.searchInput, { color: colors.foreground }]} /></View>
