@@ -30,6 +30,21 @@ export function annotateSongSections(content: string) {
   }).join("\n");
 }
 
+export function splitImportedSongContent(content: string) {
+  const paragraphs = content
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  if (paragraphs.length < 2) {
+    return { stylePrompt: null, lyrics: annotateSongSections(content) };
+  }
+
+  const first = paragraphs.shift() ?? "";
+  const stylePrompt = first.replace(/^(?:styl(?:ový)?\s*prompt|style\s*prompt|styl)\s*[:\-]\s*/i, "").trim();
+  return { stylePrompt: stylePrompt || null, lyrics: annotateSongSections(paragraphs.join("\n\n")) };
+}
+
 export function googleDocumentId(url: string) {
   const match = url.trim().match(/^https:\/\/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
   return match?.[1] ?? null;

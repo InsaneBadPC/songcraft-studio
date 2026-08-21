@@ -3,8 +3,10 @@ import type { PropsWithChildren } from "react";
 
 import {
   callExternalMediaFunction,
+  checkExternalCoverGeneration,
   completeExternalDocument,
   createExternalAlbum,
+  createExternalCoverGeneration,
   createExternalDocument,
   createExternalRhymeWord,
   createExternalSong,
@@ -63,6 +65,8 @@ export const trpc = {
     prepareManagedCopy: { useMutation: () => useMutation({ mutationFn: ({ id, label, note }: { id: string | number; label: string; note?: string | null }) => callExternalMediaFunction(String(id), label, note) }) },
     exportTaggedCopy: { useMutation: () => useMutation({ mutationFn: ({ id }: { id: string | number }) => exportExternalTaggedCopy(String(id)) }) },
     exportWholeLibrary: { useMutation: () => useMutation({ mutationFn: ({ albumId }: { albumId?: string | number }) => exportExternalLibrary(albumId === undefined ? undefined : String(albumId)) }) },
+    createCoverGeneration: { useMutation: () => useMutation({ mutationFn: ({ entityType, entityId }: { entityType: "song" | "lyric"; entityId: string | number }) => createExternalCoverGeneration(entityType, String(entityId)) }) },
+    checkCoverGeneration: { useMutation: () => useMutation({ mutationFn: ({ entityType, entityId, jobId }: { entityType: "song" | "lyric"; entityId: string | number; jobId: string }) => checkExternalCoverGeneration(entityType, String(entityId), jobId) }) },
     importDocx: { useMutation: () => useMutation({ mutationFn: ({ fileName, base64 }: { fileName: string; base64: string }) => importExternalDocx(fileName, base64).then((result) => result.id) }) },
     importGoogleDocument: { useMutation: () => useMutation({ mutationFn: ({ url, title }: { url: string; title: string }) => importExternalGoogleDocument(url, title).then((result) => result.id) }) },
   },

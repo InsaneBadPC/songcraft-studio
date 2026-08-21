@@ -7,7 +7,7 @@ import { Alert, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } 
 
 import { useColors } from "@/hooks/use-colors";
 import { assetToBase64 } from "@/lib/file-base64";
-import { annotateSongSections, cleanImportedText } from "@/lib/text-import";
+import { cleanImportedText, splitImportedSongContent } from "@/lib/text-import";
 import { trpc } from "@/lib/trpc";
 
 export function TextImporter() {
@@ -35,10 +35,10 @@ export function TextImporter() {
         }
         if (!/\.(txt|md|markdown|html?|csv)$/i.test(asset.name)) throw new Error(`Soubor „${asset.name}“ není TXT, Markdown, HTML, CSV ani DOCX.`);
         const raw = Platform.OS === "web" ? await fetch(asset.uri).then((response) => response.text()) : await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 });
-        const lyrics = annotateSongSections(cleanImportedText(raw, asset.name));
-        if (!lyrics) throw new Error(`Soubor „${asset.name}“ je prázdný.`);
+        const imported = splitImportedSongContent(cleanImportedText(raw, asset.name));
+        if (!imported.lyrics) throw new Error(`Soubor „${asset.name}“ je prázdný.`);
         const title = asset.name.replace(/\.[^.]+$/, "") || "Importovaný text";
-        createdIds.push(await createDocument.mutateAsync({ title, albumId: null, stylePrompt: null, lyrics, notes: `Importováno ze souboru ${asset.name}`, coverStorageKey: null, coverUrl: null }));
+        createdIds.push(await createDocument.mutateAsync({ title, albumId: null, stylePrompt: imported.stylePrompt, lyrics: imported.lyrics, notes: `Importováno ze souboru ${asset.name}`, coverStorageKey: null, coverUrl: null }));
       }
       if (!createdIds.length) return;
       await utils.studio.snapshot.invalidate();

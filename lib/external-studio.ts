@@ -153,12 +153,17 @@ async function callExternalUtility<T>(body: Record<string, unknown>): Promise<T>
   return assert(data, error) as T;
 }
 
+async function callExternalImport<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke("songcraft-imports", { body });
+  return assert(data, error) as T;
+}
+
 export async function importExternalDocx(fileName: string, base64: string) {
-  return callExternalUtility<{ id: string }>({ action: "import_docx", fileName, base64 });
+  return callExternalImport<{ id: string }>({ action: "import_docx", fileName, base64 });
 }
 
 export async function importExternalGoogleDocument(url: string, title: string) {
-  return callExternalUtility<{ id: string }>({ action: "import_google_document", url, title });
+  return callExternalImport<{ id: string }>({ action: "import_google_document", url, title });
 }
 
 export async function exportExternalLibrary(albumId?: string) {
@@ -170,6 +175,23 @@ export async function exportExternalTaggedCopy(versionId: string) {
   const version = assert(data, error);
   const result = await callExternalMediaFunction(version.id, version.label, version.id3_comment);
   return { url: (await signedUrl(result.path)) || "", fileName: result.fileName };
+}
+
+export type ExternalCoverGeneration =
+  | { status: "processing"; jobId?: string; message?: string }
+  | { status: "completed"; coverPath: string }
+  | { status: "failed"; error: string };
+
+export async function createExternalCoverGeneration(entityType: "song" | "lyric", entityId: string) {
+  const { data, error } = await supabase.functions.invoke("songcraft-cover-ai", { body: { action: "create", entityType, entityId } });
+  const result = assert(data, error) as { jobId?: string; message?: string; error?: string };
+  if (!result.jobId) throw new Error(result.error ?? "Cloudová AI nyní nemůže generování přijmout.");
+  return result as { jobId: string; message?: string };
+}
+
+export async function checkExternalCoverGeneration(entityType: "song" | "lyric", entityId: string, jobId: string) {
+  const { data, error } = await supabase.functions.invoke("songcraft-cover-ai", { body: { action: "check", entityType, entityId, jobId } });
+  return assert(data, error) as ExternalCoverGeneration;
 }
 
 export async function updateExternalAlbum(input: { id: string; name?: string; description?: string | null; releaseYear?: number | null; coverStorageKey?: string | null; sortOrder?: number }) {
