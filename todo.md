@@ -36,3 +36,5 @@
 - [x] Přidat český hledač rýmů s vložením vybraného rýmu do editoru textů a skladeb.
 - [x] Přidat správu vlastních slov, která se uloží do cloudového slovníku a použijí se v hledači rýmů.
 - [x] Přidat import textů z TXT, dokumentových souborů a Google Dokumentů do katalogu textů.
+- [x] Přidat import DOCX a hromadný import více textových souborů.
+- [x] Při importu rozpoznat a přehledně označit sekce písně, například sloku, refrén a bridge.

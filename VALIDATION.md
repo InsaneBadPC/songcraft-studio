@@ -53,3 +53,7 @@ Panel hledače rýmů nyní umožňuje přidat hledané slovo do části **Můj 
 ## Import textů
 
 Katalog **Texty** nyní nabízí akci **Importovat**. Uživatel může vybrat soubor TXT, Markdown, HTML nebo CSV; aplikace převede jeho obsah na čitelný text, založí nový koncept a otevře ho v editoru. Druhá cesta přijímá odkaz na Google Dokument a importuje jeho text do nového konceptu. Protože aplikace nevyžaduje externí přihlášení ke Googlu, musí být tento dokument nastavený na „kdokoli s odkazem může zobrazit“. Testy ověřují převod HTML na text a rozpoznání platného odkazu Google Dokumentu; `pnpm check`, testy i lint prošly.
+
+## Rozšířený import
+
+Importní panel nyní podporuje také DOCX a umožňuje vybrat více textových souborů v jedné akci. Každý soubor se stane samostatným novým konceptem v katalogu. Při zpracování aplikace rozpozná samostatně stojící označení jako `Verse 1`, `Sloka`, `Chorus`, `Refrén`, `Bridge`, `Intro` nebo `Outro` a sjednotí je do přehledného zápisu v hranatých závorkách, například `[Sloka 1]` a `[Refrén]`. Kontrola typů, testy i lint proběhly bez chyb.

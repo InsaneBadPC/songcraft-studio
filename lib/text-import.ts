@@ -13,6 +13,23 @@ export function cleanImportedText(content: string, fileName = "") {
   return plain.replace(/\r\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+const SECTION_NAMES: Record<string, string> = {
+  verse: "Sloka", sloka: "Sloka", chorus: "Refrén", refrain: "Refrén", refrén: "Refrén", refren: "Refrén",
+  bridge: "Bridge", intro: "Intro", outro: "Outro", "pre-chorus": "Pre-refrén", prerefrén: "Pre-refrén", "pre-refrén": "Pre-refrén",
+  interlude: "Mezihra", mezihra: "Mezihra", hook: "Hook",
+};
+
+export function annotateSongSections(content: string) {
+  return content.split("\n").map((line) => {
+    const trimmed = line.trim();
+    const match = trimmed.match(/^\[?\s*(verse|sloka|chorus|refrain|refr[ée]n|bridge|intro|outro|pre-chorus|pre-refr[ée]n|interlude|mezihra|hook)\s*(\d+)?\s*\]?[:\-]?\s*$/i);
+    if (!match) return line;
+    const key = match[1].toLocaleLowerCase("cs-CZ");
+    const label = SECTION_NAMES[key] ?? match[1];
+    return `[${label}${match[2] ? ` ${match[2]}` : ""}]`;
+  }).join("\n");
+}
+
 export function googleDocumentId(url: string) {
   const match = url.trim().match(/^https:\/\/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
   return match?.[1] ?? null;

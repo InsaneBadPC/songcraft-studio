@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import JSZip from "jszip";
+import mammoth from "mammoth";
 import NodeID3 from "node-id3";
 import { z } from "zod";
 
@@ -10,7 +11,7 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { systemRouter } from "./_core/systemRouter";
 import { storageGetSignedUrl, storagePut } from "./storage";
 import { COOKIE_NAME } from "../shared/const.js";
-import { googleDocumentId } from "../lib/text-import";
+import { annotateSongSections, googleDocumentId } from "../lib/text-import";
 
 const nullableText = (max: number) => z.string().max(max).nullable().optional();
 const nullableId = z.number().int().positive().nullable().optional();
@@ -64,6 +65,16 @@ export const appRouter = router({
     createDocument: protectedProcedure
       .input(z.object({ title: z.string().trim().min(1).max(255), albumId: nullableId, stylePrompt: nullableText(30000), lyrics: nullableText(100000), notes: nullableText(30000), coverStorageKey: nullableText(512), coverUrl: nullableText(1024) }))
       .mutation(({ ctx, input }) => db.createDocument({ ...input, userId: ctx.user.id })),
+    importDocx: protectedProcedure
+      .input(z.object({ fileName: z.string().trim().min(1).max(255), base64: z.string().min(1).max(14_000_000) }))
+      .mutation(async ({ ctx, input }) => {
+        const extracted = await mammoth.extractRawText({ buffer: Buffer.from(input.base64, "base64") });
+        const lyrics = annotateSongSections(extracted.value.trim());
+        if (!lyrics) throw new Error("DOCX neobsahuje žádný importovatelný text.");
+        if (lyrics.length > 100000) throw new Error("DOCX je pro jeden text příliš dlouhý.");
+        const title = input.fileName.replace(/\.docx$/i, "") || "Importovaný text";
+        return db.createDocument({ userId: ctx.user.id, title, albumId: null, stylePrompt: null, lyrics, notes: `Importováno z DOCX ${input.fileName}`, coverStorageKey: null, coverUrl: null });
+      }),
     importGoogleDocument: protectedProcedure
       .input(z.object({ url: z.string().url().max(2048), title: z.string().trim().min(1).max(255) }))
       .mutation(async ({ ctx, input }) => {
@@ -71,7 +82,7 @@ export const appRouter = router({
         if (!id) throw new Error("Vlož platný odkaz na Google Dokument.");
         const response = await fetch(`https://docs.google.com/document/d/${id}/export?format=txt`);
         if (!response.ok) throw new Error("Dokument se nepodařilo načíst. Nastav u něj sdílení pro každého s odkazem.");
-        const lyrics = (await response.text()).trim();
+        const lyrics = annotateSongSections((await response.text()).trim());
         if (!lyrics) throw new Error("Google Dokument neobsahuje žádný importovatelný text.");
         if (lyrics.length > 100000) throw new Error("Google Dokument je pro jeden text příliš dlouhý.");
         return db.createDocument({ userId: ctx.user.id, title: input.title, albumId: null, stylePrompt: null, lyrics, notes: "Importováno z Google Dokumentu", coverStorageKey: null, coverUrl: null });
