@@ -15,7 +15,7 @@ export default function LibraryScreen() {
   const { isAuthenticated, loading } = useAuth();
   const snapshot = trpc.studio.snapshot.useQuery(undefined, { enabled: isAuthenticated });
   const [search, setSearch] = useState("");
-  const [albumId, setAlbumId] = useState<number | null>(null);
+  const [albumId, setAlbumId] = useState<string | null>(null);
   const [finalOnly, setFinalOnly] = useState(false);
   const songs = useMemo(() => { const versions = snapshot.data?.versions ?? []; return (snapshot.data?.songs ?? []).filter((song) => (!albumId || song.albumId === albumId) && song.title.toLowerCase().includes(search.toLowerCase()) && (!finalOnly || versions.some((version) => version.songId === song.id && version.isFinal))); }, [albumId, finalOnly, search, snapshot.data?.songs, snapshot.data?.versions]);
   if (loading || (isAuthenticated && snapshot.isLoading)) return <ScreenContainer><LoadingState label="Načítám knihovnu…" /></ScreenContainer>;

@@ -21,12 +21,12 @@ export function TextImporter() {
   const [googleTitle, setGoogleTitle] = useState("");
   const pending = createDocument.isPending || importDocx.isPending || importGoogleDocument.isPending;
 
-  const finish = async (id: number) => { await utils.studio.snapshot.invalidate(); setVisible(false); router.push(`/text/${id}` as never); };
+  const finish = async (id: string) => { await utils.studio.snapshot.invalidate(); setVisible(false); router.push(`/text/${id}` as never); };
   const readFile = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: ["text/plain", "text/markdown", "text/html", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/octet-stream"], multiple: true, copyToCacheDirectory: true });
     if (result.canceled) return;
     try {
-      const createdIds: number[] = [];
+      const createdIds: string[] = [];
       for (const asset of result.assets) {
         if (/\.docx$/i.test(asset.name)) {
           const base64 = await assetToBase64(asset.uri, asset.base64);

@@ -12,13 +12,13 @@ import { useColors } from "@/hooks/use-colors";
 import { assetToBase64 } from "@/lib/file-base64";
 import { trpc } from "@/lib/trpc";
 
-type EditorForm = { title: string; albumId: number | null; stylePrompt: string; lyrics: string; notes: string; coverStorageKey: string | null; coverUrl: string | null };
+type EditorForm = { title: string; albumId: string | null; stylePrompt: string; lyrics: string; notes: string; coverStorageKey: string | null; coverUrl: string | null };
 const emptyForm: EditorForm = { title: "", albumId: null, stylePrompt: "", lyrics: "", notes: "", coverStorageKey: null, coverUrl: null };
 
 export default function TextEditorScreen() {
   const colors = useColors();
   const { id: rawId } = useLocalSearchParams<{ id: string }>();
-  const id = rawId === "new" ? null : Number(rawId);
+  const id = rawId === "new" ? null : rawId;
   const { isAuthenticated } = useAuth();
   const utils = trpc.useUtils();
   const snapshot = trpc.studio.snapshot.useQuery(undefined, { enabled: isAuthenticated });

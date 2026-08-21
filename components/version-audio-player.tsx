@@ -6,7 +6,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useColors } from "@/hooks/use-colors";
 
 export type PlayableVersion = {
-  id: number;
+  id: string;
   label: string;
   originalFileName: string;
   storageUrl: string;
@@ -17,7 +17,7 @@ export type PlayableVersion = {
 export function VersionAudioPlayer({ versions }: { versions: PlayableVersion[] }) {
   const colors = useColors();
   const defaultVersion = useMemo(() => versions.find((entry) => entry.isFinal) ?? versions.find((entry) => entry.isPrimary) ?? versions[0], [versions]);
-  const [activeId, setActiveId] = useState<number | null>(defaultVersion?.id ?? null);
+  const [activeId, setActiveId] = useState<string | null>(defaultVersion?.id ?? null);
   const activeVersion = versions.find((entry) => entry.id === activeId) ?? defaultVersion;
   const player = useAudioPlayer(activeVersion?.storageUrl, { updateInterval: 250 });
   const status = useAudioPlayerStatus(player);

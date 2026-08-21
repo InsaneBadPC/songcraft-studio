@@ -17,11 +17,11 @@ import { trpc } from "@/lib/trpc";
 export default function SongDetailScreen() {
   const colors = useColors();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const songId = Number(id);
+  const songId = id;
   const { isAuthenticated } = useAuth();
   const utils = trpc.useUtils();
   const snapshot = trpc.studio.snapshot.useQuery(undefined, { enabled: isAuthenticated });
-  const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
+  const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const [versionOrder, setVersionOrder] = useState<"rating" | "newest">("rating");
   const [pendingMp3, setPendingMp3] = useState<{ uri: string; name: string; mimeType?: string | null; base64?: string | null } | null>(null);
   const upload = trpc.studio.upload.useMutation();
@@ -32,7 +32,7 @@ export default function SongDetailScreen() {
   const legacyDocument = snapshot.data?.documents.find((entry) => entry.id === song?.sourceDocumentId);
   const album = snapshot.data?.albums.find((entry) => entry.id === song?.albumId);
   const versions = useMemo(() => snapshot.data?.versions.filter((entry) => entry.songId === songId) ?? [], [snapshot.data?.versions, songId]);
-  const sortedVersions = useMemo(() => [...versions].sort((left, right) => versionOrder === "rating" ? right.rating - left.rating || Number(right.isFinal) - Number(left.isFinal) || Number(right.isPrimary) - Number(left.isPrimary) || right.id - left.id : right.id - left.id), [versionOrder, versions]);
+  const sortedVersions = useMemo(() => [...versions].sort((left, right) => versionOrder === "rating" ? right.rating - left.rating || Number(right.isFinal) - Number(left.isFinal) || Number(right.isPrimary) - Number(left.isPrimary) || right.createdAt.getTime() - left.createdAt.getTime() : right.createdAt.getTime() - left.createdAt.getTime()), [versionOrder, versions]);
 
   if (snapshot.isLoading) return <ScreenContainer><LoadingState label="Načítám skladbu…" /></ScreenContainer>;
   if (!song) return <ScreenContainer className="p-5 justify-center"><EmptyState icon="music-off" title="Skladba nebyla nalezena" text="Vrať se do knihovny a zkus otevřít položku znovu." action={<PrimaryButton label="Do knihovny" icon="library-music" onPress={() => router.replace("/(tabs)/library" as never)} />} /></ScreenContainer>;
@@ -138,7 +138,7 @@ function Mp3IntakeSheet({ asset, defaultLabel, loading, onClose, onSave }: { ass
   return <Modal visible transparent animationType="slide" onRequestClose={onClose}><View style={styles.modalShade}><View style={[styles.sheet, { backgroundColor: colors.background }]}><View style={[styles.handle, { backgroundColor: colors.border }]} /><View style={styles.sheetTop}><View><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Přidat MP3 verzi</Text><Text numberOfLines={1} style={[styles.sheetFile, { color: colors.muted }]}>{asset.name}</Text></View><IconButton icon="close" label="Zavřít" onPress={onClose} /></View><View style={styles.sheetContent}><Text style={[styles.metaDescription, { color: colors.muted }]}>Po uložení vznikne v cloudu nová kopie MP3 se jménem verze a ID3 tagy: Temney, název skladby, album a obrázek.</Text><Field label="Název verze MP3" value={label} onChangeText={setLabel} placeholder="Např. Master V1" colors={colors} /><Field label="Poznámka k verzi" value={note} onChangeText={setNote} placeholder="Např. čistší vokál, před publikováním" multiline colors={colors} /><PrimaryButton label={loading ? "Připravuji cloudovou kopii…" : "Uložit a připravit MP3"} icon="cloud-upload" onPress={() => void onSave(label.trim() || asset.name.replace(/\.mp3$/i, ""), note)} disabled={loading} /></View></View></View></Modal>;
 }
 
-function VersionEditor({ id, onClose }: { id: number | null; onClose: () => void }) {
+function VersionEditor({ id, onClose }: { id: string | null; onClose: () => void }) {
   const colors = useColors();
   const utils = trpc.useUtils();
   const snapshot = trpc.studio.snapshot.useQuery();

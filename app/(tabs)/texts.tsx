@@ -15,7 +15,7 @@ export default function TextsScreen() {
   const colors = useColors();
   const { isAuthenticated, loading } = useAuth();
   const [search, setSearch] = useState("");
-  const [albumId, setAlbumId] = useState<number | null>(null);
+  const [albumId, setAlbumId] = useState<string | null>(null);
   const snapshot = trpc.studio.snapshot.useQuery(undefined, { enabled: isAuthenticated });
   const records = useMemo(() => (snapshot.data?.documents ?? []).filter((document) => (!albumId || document.albumId === albumId) && `${document.title} ${document.lyrics ?? ""} ${document.stylePrompt ?? ""}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())), [albumId, search, snapshot.data?.documents]);
   if (loading || (isAuthenticated && snapshot.isLoading)) return <ScreenContainer><LoadingState /></ScreenContainer>;

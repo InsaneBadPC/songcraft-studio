@@ -76,7 +76,12 @@ export type StudioSnapshot = { albums: StudioAlbum[]; documents: StudioDocument[
 
 type SessionUser = { id: string };
 const mapTime = (value: string | null | undefined) => (value ? new Date(value) : null);
-const withPublicUrl = (path: string | null) => path ? supabase.storage.from("songcraft").getPublicUrl(path).data.publicUrl : null;
+const signedUrl = async (path: string | null) => {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from("songcraft").createSignedUrl(path, 60 * 60);
+  if (error) throw new Error(error.message);
+  return data.signedUrl;
+};
 const owner = async (): Promise<SessionUser> => {
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) throw new Error("Pro synchronizaci s externím cloudem se nejdříve přihlas.");
@@ -87,10 +92,10 @@ const assert = <T>(data: T | null, error: { message: string } | null): T => {
   return data;
 };
 
-const albumFromRow = (row: any): StudioAlbum => ({ id: row.id, userId: row.user_id, name: row.name, description: row.description, releaseYear: row.release_year, coverStorageKey: row.cover_path, coverUrl: withPublicUrl(row.cover_path), sortOrder: row.sort_order, createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
-const documentFromRow = (row: any): StudioDocument => ({ id: row.id, userId: row.user_id, albumId: row.album_id, title: row.title, stylePrompt: row.style_prompt, lyrics: row.lyrics, notes: row.notes, coverStorageKey: row.cover_path, coverUrl: withPublicUrl(row.cover_path), status: row.status === "complete" ? "complete" : "draft", completedAt: mapTime(row.completed_at), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
-const songFromRow = (row: any): StudioSong => ({ id: row.id, userId: row.user_id, albumId: row.album_id, sourceDocumentId: row.source_lyric_id, title: row.title, stylePrompt: row.style_prompt, lyrics: row.lyrics, notes: row.notes, coverStorageKey: row.cover_path, coverUrl: withPublicUrl(row.cover_path), completedAt: new Date(row.completed_at), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
-const versionFromRow = (row: any): StudioVersion => ({ id: row.id, userId: row.user_id, songId: row.song_id, label: row.label, originalFileName: row.original_file_name, storageKey: row.storage_path, storageUrl: withPublicUrl(row.storage_path) || "", mimeType: row.mime_type, byteSize: row.byte_size, rating: row.rating, isPrimary: row.is_primary, isFinal: row.is_final, id3Title: row.id3_title, id3Artist: row.id3_artist, id3Album: row.id3_album, id3TrackNumber: row.id3_track_number, id3Year: row.id3_year, id3Genre: row.id3_genre, id3Comment: row.id3_comment, taggedStorageKey: row.tagged_storage_path, taggedStorageUrl: withPublicUrl(row.tagged_storage_path), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
+const albumFromRow = async (row: any): Promise<StudioAlbum> => ({ id: row.id, userId: row.user_id, name: row.name, description: row.description, releaseYear: row.release_year, coverStorageKey: row.cover_path, coverUrl: await signedUrl(row.cover_path), sortOrder: row.sort_order, createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
+const documentFromRow = async (row: any): Promise<StudioDocument> => ({ id: row.id, userId: row.user_id, albumId: row.album_id, title: row.title, stylePrompt: row.style_prompt, lyrics: row.lyrics, notes: row.notes, coverStorageKey: row.cover_path, coverUrl: await signedUrl(row.cover_path), status: row.status === "complete" ? "complete" : "draft", completedAt: mapTime(row.completed_at), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
+const songFromRow = async (row: any): Promise<StudioSong> => ({ id: row.id, userId: row.user_id, albumId: row.album_id, sourceDocumentId: row.source_lyric_id, title: row.title, stylePrompt: row.style_prompt, lyrics: row.lyrics, notes: row.notes, coverStorageKey: row.cover_path, coverUrl: await signedUrl(row.cover_path), completedAt: new Date(row.completed_at), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
+const versionFromRow = async (row: any): Promise<StudioVersion> => ({ id: row.id, userId: row.user_id, songId: row.song_id, label: row.label, originalFileName: row.original_file_name, storageKey: row.storage_path, storageUrl: (await signedUrl(row.storage_path)) || "", mimeType: row.mime_type, byteSize: row.byte_size, rating: row.rating, isPrimary: row.is_primary, isFinal: row.is_final, id3Title: row.id3_title, id3Artist: row.id3_artist, id3Album: row.id3_album, id3TrackNumber: row.id3_track_number, id3Year: row.id3_year, id3Genre: row.id3_genre, id3Comment: row.id3_comment, taggedStorageKey: row.tagged_storage_path, taggedStorageUrl: await signedUrl(row.tagged_storage_path), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
 const rhymeFromRow = (row: any): StudioRhymeWord => ({ id: row.id, userId: row.user_id, word: row.word, createdAt: new Date(row.created_at) });
 const fileName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-180) || "soubor";
 
@@ -103,10 +108,10 @@ export async function getExternalStudioSnapshot(): Promise<StudioSnapshot> {
     supabase.from("sc_rhyme_words").select("*").order("word"),
   ]);
   return {
-    albums: assert(albums.data, albums.error).map(albumFromRow),
-    documents: assert(documents.data, documents.error).map(documentFromRow),
-    songs: assert(songs.data, songs.error).map(songFromRow),
-    versions: assert(versions.data, versions.error).map(versionFromRow),
+    albums: await Promise.all(assert(albums.data, albums.error).map(albumFromRow)),
+    documents: await Promise.all(assert(documents.data, documents.error).map(documentFromRow)),
+    songs: await Promise.all(assert(songs.data, songs.error).map(songFromRow)),
+    versions: await Promise.all(assert(versions.data, versions.error).map(versionFromRow)),
     rhymeWords: assert(rhymeWords.data, rhymeWords.error).map(rhymeFromRow),
   };
 }
@@ -118,7 +123,7 @@ export async function uploadToExternalStorage(input: { folder: "covers" | "audio
   const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
   const { error } = await supabase.storage.from("songcraft").upload(path, bytes, { contentType: input.contentType, upsert: false });
   if (error) throw new Error(error.message);
-  return { key: path, url: withPublicUrl(path) || "", byteSize: bytes.byteLength, originalFileName: fileName(input.fileName), mimeType: input.contentType };
+  return { key: path, url: (await signedUrl(path)) || "", byteSize: bytes.byteLength, originalFileName: fileName(input.fileName), mimeType: input.contentType };
 }
 
 export async function createExternalAlbum(input: { name: string; description?: string | null; releaseYear?: number | null; coverStorageKey?: string | null }) {
@@ -141,6 +146,30 @@ export async function deleteExternalRhymeWord(id: string) {
 export async function callExternalMediaFunction(versionId: string, label: string, note?: string | null) {
   const { data, error } = await supabase.functions.invoke("songcraft-media", { body: { action: "prepare_tagged_copy", versionId, label, note: note ?? null } });
   return assert(data, error) as { path: string; fileName: string };
+}
+
+async function callExternalUtility<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke("songcraft-utilities", { body });
+  return assert(data, error) as T;
+}
+
+export async function importExternalDocx(fileName: string, base64: string) {
+  return callExternalUtility<{ id: string }>({ action: "import_docx", fileName, base64 });
+}
+
+export async function importExternalGoogleDocument(url: string, title: string) {
+  return callExternalUtility<{ id: string }>({ action: "import_google_document", url, title });
+}
+
+export async function exportExternalLibrary(albumId?: string) {
+  return callExternalUtility<{ url: string; fileName: string; byteSize: number }>({ action: "export_library", ...(albumId ? { albumId } : {}) });
+}
+
+export async function exportExternalTaggedCopy(versionId: string) {
+  const { data, error } = await supabase.from("sc_audio_versions").select("id, label, id3_comment").eq("id", versionId).single();
+  const version = assert(data, error);
+  const result = await callExternalMediaFunction(version.id, version.label, version.id3_comment);
+  return { url: (await signedUrl(result.path)) || "", fileName: result.fileName };
 }
 
 export async function updateExternalAlbum(input: { id: string; name?: string; description?: string | null; releaseYear?: number | null; coverStorageKey?: string | null; sortOrder?: number }) {

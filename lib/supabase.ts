@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
+import { Platform } from "react-native";
 
 /**
  * Veřejný klíč je určený pro klientské aplikace. Soukromí dat prosazují RLS
@@ -8,12 +9,13 @@ import { createClient } from "@supabase/supabase-js";
 export const SUPABASE_URL = "https://hfykngbhcxmnpxvjagoj.supabase.co";
 export const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_5mOBkLJhXzLb6U6_stJLQQ_j89L0lEH";
 
+const canPersistSession = Platform.OS !== "web" || typeof window !== "undefined";
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
-    storage: AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
+    ...(canPersistSession ? { storage: AsyncStorage } : {}),
+    autoRefreshToken: canPersistSession,
+    persistSession: canPersistSession,
     detectSessionInUrl: false,
   },
 });
-

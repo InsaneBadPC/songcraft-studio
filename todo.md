@@ -39,8 +39,12 @@
 - [x] Přidat import DOCX a hromadný import více textových souborů.
 - [x] Při importu rozpoznat a přehledně označit sekce písně, například sloku, refrén a bridge.
 - [x] Opravit okamžité zobrazení nahraného obalu v seznamu a detailu alba.
-- [ ] Připravit SongCraft Studio pro externí databázi, úložiště souborů, backend a webové hostování mimo interní infrastrukturu projektu.
+- [x] Připravit SongCraft Studio pro externí databázi, úložiště souborů, backend a webové hostování mimo interní infrastrukturu projektu.
 - [x] Založit externí schéma Supabase pro soukromá alba, texty, skladby, MP3 verze, rýmy a objektové úložiště.
 - [x] Ověřit RLS a přístupová pravidla externího Supabase projektu bezpečnostním auditem.
 - [x] Přidat externí klientskou vrstvu Supabase a zabezpečenou Edge funkci pro vytváření ID3-tagovaných MP3 kopií.
-- [ ] Přepojit klienta, přihlášení, zpracování MP3 a nasazení webu na externí infrastrukturu.
+- [x] Přepojit klienta, přihlášení, zpracování MP3 a nasazení webu na externí infrastrukturu.
+- [x] Nahradit aktivní Manus OAuth přihlášení jednoduchým Supabase přihlášením v aplikaci.
+- [x] Přepojit všechny obrazovky z interních tRPC volání na externí Supabase synchronizaci.
+- [x] Přepojit nahrávání souborů, MP3 kopie a exporty na Supabase Storage a Edge funkce.
+- [x] Připravit nezávislé externí nasazení webového rozhraní bez interního hostingu.

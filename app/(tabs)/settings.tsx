@@ -25,7 +25,7 @@ export default function SettingsScreen() {
   const versions = snapshot.data?.versions.length ?? 0;
   const exporting = exportWholeLibrary.isPending;
   const showLogout = () => Alert.alert("Odhlásit SongCraft Studio?", "Lokální obrazovka se odhlásí, data zůstanou bezpečně v cloudu.", [{ text: "Zrušit", style: "cancel" }, { text: "Odhlásit", style: "destructive", onPress: async () => { await authLogout.mutateAsync(); await logout(); } }]);
-  const exportLibrary = async (album?: { id: number; name: string }) => {
+  const exportLibrary = async (album?: { id: string; name: string }) => {
     setExportStatus(album ? `Sbírám texty, obrázky a MP3 z alba „${album.name}“…` : "Sbírám texty, obrázky, MP3 a metadata z celé knihovny…");
     try {
       const archive = await exportWholeLibrary.mutateAsync(album ? { albumId: album.id } : {});
