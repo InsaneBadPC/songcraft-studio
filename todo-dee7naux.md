@@ -14,3 +14,7 @@
 - [x] Převést webové rozhraní na nezávislé nasazení z GitHubu bez Manus domény a runtime závislosti.
 - [x] Navrhnout nasazení SongCraft Studio nezávislé na Manus se Supabase jako datovou a ověřovací vrstvou.
 - [x] Nasadit statický web na GitHub Pages z repozitáře InsaneBadPC/songcraft-studio.
+- [x] Vytvořit izolovanou experimentální větev s AI chatem nad daty právě přihlášeného účtu.
+- [x] Přidat bezpečné volání Google AI přes Supabase Edge Function bez vystavení klíče klientovi.
+- [x] Vyloučit placené generování obrázků a soukromé ukládání výsledků z bezplatného experimentu.
+- [x] Implementovat pouze bezplatný Gemini textový chat a přípravu promptů pro obaly bez generování obrázků přes API.
