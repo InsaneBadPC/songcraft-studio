@@ -42,6 +42,9 @@ jobs:
       - name: Verify and export web
         run: |
           pnpm check
+          # NativeWind writes this cache during its first Metro pass.
+          # A priming pass prevents Metro's first-run SHA race in clean CI runners.
+          npx expo export --platform web --output-dir /tmp/songcraft-web-prime || true
           npx expo export --platform web --output-dir dist
           touch dist/.nojekyll
 
