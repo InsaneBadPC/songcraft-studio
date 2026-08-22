@@ -1,6 +1,8 @@
 name: Build experimental Android APK
 
 on:
+  push:
+    branches: [experiment/google-ai-studio]
   workflow_dispatch:
 
 permissions:
