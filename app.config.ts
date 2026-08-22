@@ -124,6 +124,8 @@ const config: ExpoConfig = {
     ],
   ],
   experiments: {
+    // GitHub Pages serves this repository below /songcraft-studio.
+    baseUrl: "/songcraft-studio",
     typedRoutes: true,
     reactCompiler: true,
   },
