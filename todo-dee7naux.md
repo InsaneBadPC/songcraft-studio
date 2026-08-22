@@ -18,3 +18,8 @@
 - [x] Přidat bezpečné volání Google AI přes Supabase Edge Function bez vystavení klíče klientovi.
 - [x] Vyloučit placené generování obrázků a soukromé ukládání výsledků z bezplatného experimentu.
 - [x] Implementovat pouze bezplatný Gemini textový chat a přípravu promptů pro obaly bez generování obrázků přes API.
+- [x] Navrhnout a nasadit bezplatné generování obalů skladeb s kontextem Temney, alba, názvu, textu a volitelné poznámky.
+- [x] Vytvořit automatický 16:9 obal, který přímo ve výsledném JPG obsahuje Temney, název alba a název skladby.
+- [x] Opravit pád při výběru MP3 a následném otevření skladby z knihovny odolným přehrávačem a binárním nahráváním.
+- [ ] Ověřit webový export a sestavit Android APK z izolované větve.
+- [ ] Vytvořit a předat odkaz na APK z izolované větve s opravou MP3 a generováním obalů.

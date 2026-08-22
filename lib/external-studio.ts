@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { getPlayableAudioUrl } from "@/lib/audio-source";
 
 export type StudioAlbum = {
   id: string;
@@ -79,7 +80,8 @@ const mapTime = (value: string | null | undefined) => (value ? new Date(value) :
 const signedUrl = async (path: string | null) => {
   if (!path) return null;
   const { data, error } = await supabase.storage.from("songcraft").createSignedUrl(path, 60 * 60);
-  if (error) throw new Error(error.message);
+  // Jedna poškozená nebo již neexistující příloha nesmí zablokovat celý katalog.
+  if (error || !data?.signedUrl) return null;
   return data.signedUrl;
 };
 const owner = async (): Promise<SessionUser> => {
@@ -95,7 +97,11 @@ const assert = <T>(data: T | null, error: { message: string } | null): T => {
 const albumFromRow = async (row: any): Promise<StudioAlbum> => ({ id: row.id, userId: row.user_id, name: row.name, description: row.description, releaseYear: row.release_year, coverStorageKey: row.cover_path, coverUrl: await signedUrl(row.cover_path), sortOrder: row.sort_order, createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
 const documentFromRow = async (row: any): Promise<StudioDocument> => ({ id: row.id, userId: row.user_id, albumId: row.album_id, title: row.title, stylePrompt: row.style_prompt, lyrics: row.lyrics, notes: row.notes, coverStorageKey: row.cover_path, coverUrl: await signedUrl(row.cover_path), status: row.status === "complete" ? "complete" : "draft", completedAt: mapTime(row.completed_at), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
 const songFromRow = async (row: any): Promise<StudioSong> => ({ id: row.id, userId: row.user_id, albumId: row.album_id, sourceDocumentId: row.source_lyric_id, title: row.title, stylePrompt: row.style_prompt, lyrics: row.lyrics, notes: row.notes, coverStorageKey: row.cover_path, coverUrl: await signedUrl(row.cover_path), completedAt: new Date(row.completed_at), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
-const versionFromRow = async (row: any): Promise<StudioVersion> => ({ id: row.id, userId: row.user_id, songId: row.song_id, label: row.label, originalFileName: row.original_file_name, storageKey: row.storage_path, storageUrl: (await signedUrl(row.storage_path)) || "", mimeType: row.mime_type, byteSize: row.byte_size, rating: row.rating, isPrimary: row.is_primary, isFinal: row.is_final, id3Title: row.id3_title, id3Artist: row.id3_artist, id3Album: row.id3_album, id3TrackNumber: row.id3_track_number, id3Year: row.id3_year, id3Genre: row.id3_genre, id3Comment: row.id3_comment, taggedStorageKey: row.tagged_storage_path, taggedStorageUrl: await signedUrl(row.tagged_storage_path), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
+const versionFromRow = async (row: any): Promise<StudioVersion> => {
+  const storageUrl = await signedUrl(row.storage_path);
+  const taggedStorageUrl = await signedUrl(row.tagged_storage_path);
+  return { id: row.id, userId: row.user_id, songId: row.song_id, label: row.label, originalFileName: row.original_file_name, storageKey: row.storage_path, storageUrl: getPlayableAudioUrl(storageUrl) ?? "", mimeType: row.mime_type, byteSize: row.byte_size, rating: row.rating, isPrimary: row.is_primary, isFinal: row.is_final, id3Title: row.id3_title, id3Artist: row.id3_artist, id3Album: row.id3_album, id3TrackNumber: row.id3_track_number, id3Year: row.id3_year, id3Genre: row.id3_genre, id3Comment: row.id3_comment, taggedStorageKey: row.tagged_storage_path, taggedStorageUrl: getPlayableAudioUrl(taggedStorageUrl), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) };
+};
 const rhymeFromRow = (row: any): StudioRhymeWord => ({ id: row.id, userId: row.user_id, word: row.word, createdAt: new Date(row.created_at) });
 const fileName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-180) || "soubor";
 
@@ -116,11 +122,11 @@ export async function getExternalStudioSnapshot(): Promise<StudioSnapshot> {
   };
 }
 
-export async function uploadToExternalStorage(input: { folder: "covers" | "audio"; fileName: string; contentType: string; base64: string }) {
+export async function uploadToExternalStorage(input: { folder: "covers" | "audio"; fileName: string; contentType: string; base64?: string; bytes?: ArrayBuffer }) {
   const user = await owner();
   const path = `${user.id}/${input.folder}/${Date.now()}-${fileName(input.fileName)}`;
-  const binary = globalThis.atob(input.base64);
-  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const bytes = input.bytes ? new Uint8Array(input.bytes) : input.base64 ? Uint8Array.from(globalThis.atob(input.base64), (character) => character.charCodeAt(0)) : null;
+  if (!bytes) throw new Error("Chybí data souboru pro nahrání.");
   const { error } = await supabase.storage.from("songcraft").upload(path, bytes, { contentType: input.contentType, upsert: false });
   if (error) throw new Error(error.message);
   return { key: path, url: (await signedUrl(path)) || "", byteSize: bytes.byteLength, originalFileName: fileName(input.fileName), mimeType: input.contentType };
@@ -182,15 +188,15 @@ export type ExternalCoverGeneration =
   | { status: "completed"; coverPath: string }
   | { status: "failed"; error: string };
 
-export async function createExternalCoverGeneration(entityType: "song" | "lyric", entityId: string) {
-  const { data, error } = await supabase.functions.invoke("songcraft-cover-ai", { body: { action: "create", entityType, entityId } });
+export async function createExternalCoverGeneration(entityType: "song" | "lyric", entityId: string, options?: { format?: "youtube_16_9"; userNote?: string | null }) {
+  const { data, error } = await supabase.functions.invoke("songcraft-cover-ai", { body: { action: "create", entityType, entityId, ...options } });
   const result = assert(data, error) as { jobId?: string; message?: string; error?: string };
   if (!result.jobId) throw new Error(result.error ?? "Cloudová AI nyní nemůže generování přijmout.");
   return result as { jobId: string; message?: string };
 }
 
-export async function checkExternalCoverGeneration(entityType: "song" | "lyric", entityId: string, jobId: string) {
-  const { data, error } = await supabase.functions.invoke("songcraft-cover-ai", { body: { action: "check", entityType, entityId, jobId } });
+export async function checkExternalCoverGeneration(entityType: "song" | "lyric", entityId: string, jobId: string, options?: { format?: "youtube_16_9" }) {
+  const { data, error } = await supabase.functions.invoke("songcraft-cover-ai", { body: { action: "check", entityType, entityId, jobId, ...options } });
   return assert(data, error) as ExternalCoverGeneration;
 }
 
