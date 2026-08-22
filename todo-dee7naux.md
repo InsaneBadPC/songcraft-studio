@@ -10,3 +10,7 @@
 - [x] Zjistit, že zdroj mobilní aplikace je již v repozitáři InsaneBadPC/songcraft-studio, a publikovat workflow do větve main.
 - [x] Ověřit potřebné oprávnění účtu InsaneBadPC pro publikování GitHub Actions workflow.
 - [x] Publikovat zdroj a GitHub Actions Android workflow do repozitáře InsaneBadPC/songcraft-studio.
+- [x] Ověřit dostupnost a funkčnost webového rozhraní se soukromým přihlášením.
+- [x] Převést webové rozhraní na nezávislé nasazení z GitHubu bez Manus domény a runtime závislosti.
+- [x] Navrhnout nasazení SongCraft Studio nezávislé na Manus se Supabase jako datovou a ověřovací vrstvou.
+- [x] Nasadit statický web na GitHub Pages z repozitáře InsaneBadPC/songcraft-studio.
