@@ -18,6 +18,7 @@ const MAPPING = {
   "square.and.pencil": "edit-note",
   "rectangle.stack.fill": "album",
   "music.note.list": "library-music",
+  "sparkles": "auto-awesome",
   "gearshape.fill": "settings",
   "chevron.left.forwardslash.chevron.right": "code",
   "chevron.right": "chevron-right",

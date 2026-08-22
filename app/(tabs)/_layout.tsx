@@ -16,6 +16,7 @@ export default function TabLayout() {
       <Tabs.Screen name="texts" options={{ title: "Texty", tabBarIcon: ({ color }) => <IconSymbol size={23} name="square.and.pencil" color={color} /> }} />
       <Tabs.Screen name="albums" options={{ title: "Alba", tabBarIcon: ({ color }) => <IconSymbol size={23} name="rectangle.stack.fill" color={color} /> }} />
       <Tabs.Screen name="library" options={{ title: "Knihovna", tabBarIcon: ({ color }) => <IconSymbol size={23} name="music.note.list" color={color} /> }} />
+      <Tabs.Screen name="assistant" options={{ title: "Asistent", tabBarIcon: ({ color }) => <IconSymbol size={23} name="sparkles" color={color} /> }} />
       <Tabs.Screen name="settings" options={{ title: "Nastavení", tabBarIcon: ({ color }) => <IconSymbol size={23} name="gearshape.fill" color={color} /> }} />
     </Tabs>
   );
