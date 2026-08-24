@@ -46,7 +46,7 @@ if (!coverPath && song.album_id) {
 if (!coverPath) await fail("Skladba ani album nemají obrázek pro video.");
 
 const signed = async (path) => {
-  const response = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${BUCKET}/${encodeURIComponent(path)}`, {
+  const response = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${BUCKET}/${path}`, {
     method: "POST",
     headers,
     body: JSON.stringify({ expiresIn: 3600 }),
@@ -56,14 +56,20 @@ const signed = async (path) => {
   return `${SUPABASE_URL}/storage/v1${signedURL}`;
 };
 
+const downloadTo = async (url, destination) => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Stažení ${destination} selhalo (${response.status}).`);
+  await writeFile(destination, Buffer.from(await response.arrayBuffer()));
+};
+
 const safeTitle = (song.title ?? "Skladba").replace(/["'\\\\:]/g, "").slice(0, 150);
 
 const audioPath = version.tagged_storage_path || version.storage_path;
 const work = "/tmp/songcraft-render";
 await run("mkdir", ["-p", work]);
 console.log("Stahuji cover a MP3…");
-await run("curl", ["-sSL", "-o", `${work}/cover`, await signed(coverPath)]);
-await run("curl", ["-sSL", "-o", `${work}/audio.mp3`, await signed(audioPath)]);
+await downloadTo(await signed(coverPath), `${work}/cover`);
+await downloadTo(await signed(audioPath), `${work}/audio.mp3`);
 
 // Titulek do samostatného souboru, aby nevadily uvozovky ani diakritika.
 await writeFile(`${work}/title.txt`, `Temney\n${safeTitle}`);
