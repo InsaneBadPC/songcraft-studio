@@ -3,7 +3,7 @@ name: Build experimental Android APK
 on:
   push:
     branches:
-      - experiment/cover-image-mp3-fix
+      - main
   workflow_dispatch:
 
 permissions:
@@ -54,7 +54,7 @@ jobs:
       - name: Upload experimental APK
         uses: actions/upload-artifact@v4
         with:
-          name: songcraft-cover-mp3-experiment-apk
+          name: songcraft-android-apk
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
