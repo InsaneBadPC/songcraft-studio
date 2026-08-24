@@ -1,0 +1,29 @@
+name: Render YouTube video
+
+on:
+  repository_dispatch:
+    types: [render-youtube]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-${{ github.event.client_payload.jobId }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Render Full HD MP4 and upload to SongCraft storage
+        env:
+          SONGCRAFT_SUPABASE_URL: "https://hfykngbhcxmnpxvjagoj.supabase.co"
+          SONGCRAFT_SERVICE_ROLE_KEY: ${{ secrets.SONGCRAFT_SERVICE_ROLE_KEY }}
+          JOB_ID: ${{ github.event.client_payload.jobId }}
+          SONG_ID: ${{ github.event.client_payload.songId }}
+          VERSION_ID: ${{ github.event.client_payload.versionId }}
+        run: node scripts/render/render-youtube.mjs
