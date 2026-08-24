@@ -1,0 +1,79 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
+
+const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
+const clip = (value: unknown, maximum: number) => typeof value === "string" ? value.trim().slice(0, maximum) : "";
+
+Deno.serve(async (request) => {
+  if (request.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (request.method !== "POST") return json({ error: "Použij POST požadavek." }, 405);
+  const authorization = request.headers.get("Authorization");
+  const url = Deno.env.get("SUPABASE_URL");
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  const geminiKey = Deno.env.get("GOOGLE_AI_STUDIO_KEY");
+  if (!authorization || !url || !anonKey) return json({ error: "Chybí bezpečné připojení." }, 401);
+  if (!geminiKey) return json({ error: "AI copywriter není správně nakonfigurován." }, 503);
+
+  const supabase = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } });
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return json({ error: "Neplatné přihlášení." }, 401);
+
+  const input = await request.json().catch(() => null) as { action?: string; songId?: string } | null;
+  if (!input?.action || !input.songId) return json({ error: "Chybí skladba nebo akce." }, 400);
+  if (!["description", "tags"].includes(input.action)) return json({ error: "Neznámá akce." }, 400);
+
+  const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? anonKey);
+  const { data: song, error: songError } = await admin.from("sc_songs").select("id,user_id,title,style_prompt,style_prompts,lyrics,album_id").eq("id", input.songId).single();
+  if (songError || !song || song.user_id !== user.id) return json({ error: "Skladba nebyla nalezena." }, 404);
+
+  let albumName = "";
+  if (song.album_id) {
+    const { data: album } = await admin.from("sc_albums").select("name").eq("id", song.album_id).single();
+    albumName = clip(album?.name, 120);
+  }
+  const stylePrompts = Array.isArray(song.style_prompts) ? song.style_prompts.filter((entry: unknown): entry is string => typeof entry === "string" && entry.trim()).map((entry: string) => clip(entry, 400)) : [];
+  if (song.style_prompt && !stylePrompts.includes(clip(song.style_prompt, 400))) stylePrompts.unshift(clip(song.style_prompt, 400));
+
+  const contextLines = [
+    `Interpret: Temney`,
+    `Název skladby: ${clip(song.title, 150)}`,
+    albumName ? `Album: ${albumName}` : "",
+    stylePrompts.length ? `Styl/žánr: ${stylePrompts.join(" | ")}` : "",
+    `Text písně:\n${clip(song.lyrics, 2500) || "(text není k dispozici)"}`,
+  ].filter(Boolean).join("\n");
+
+  const instruction = input.action === "description"
+    ? [
+        "Jsi copywriter pro hudební YouTube kanál interpreta Temney.",
+        "Na základě názvu, stylu a textu písně napiš poutavý český popis videa na YouTube (120–180 slov).",
+        "Struktura: 1) úvodní hook dvě věty s atmosférou skladby, 2) odstavec o tom, o čem píseň je a jaký má zvuk,",
+        "3) výzva posluchačům (odběr, sdílení, komentář), 4) na konec řádek „#Temney #<názevBezDiakritiky> #hudba“.",
+        "Nevymýšlej si fakta (datum, spolupracovníky, odkazy). Piš pouze výsledný popis, bez úvodu a bez komentářů.",
+      ].join("\n")
+    : [
+        "Jsi specialista na YouTube metadata pro hudební kanál interpreta Temney.",
+        "Na základě názvu, stylu a textu písně navrhni 12–18 relevantních tagů (krátká slova nebo fráze).",
+        "Smíchej češtinu a angličtinu, zahrň žánr, náladu, interpret a název skladby.",
+        "Vrať POUZE tagy oddělené čárkou, bez číslování, bez mřížek, bez dalšího textu.",
+      ].join("\n");
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${encodeURIComponent(geminiKey)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: `${instruction}\n\nMATERIÁL SKLADBY:\n${contextLines}` }] },
+      contents: [{ role: "user", parts: [{ text: input.action === "description" ? "Napiš popis videa na YouTube." : "Navrhni tagy." }] }],
+      generationConfig: { temperature: 0.8, maxOutputTokens: 900 },
+    }),
+  });
+  if (!response.ok) return json({ error: "Google AI teď odmítla požadavek. Zkus to za chvíli." }, response.status === 429 ? 429 : 502);
+  const generated = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: unknown }> } }> };
+  let text = clip(generated.candidates?.[0]?.content?.parts?.map((part) => typeof part.text === "string" ? part.text : "").join("\n"), 5000)
+    .replace(/^```[a-z]*\n?|```$/g, "").trim();
+  if (!text) return json({ error: "AI nevrátila text. Zkus to znovu." }, 502);
+  if (input.action === "tags") {
+    text = text.split(/[,\n]/).map((tag) => tag.replace(/^[-#\d.\s]+/, "").trim()).filter(Boolean).slice(0, 18).join(", ");
+  }
+  return json({ text });
+});

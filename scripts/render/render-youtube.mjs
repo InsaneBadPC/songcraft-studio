@@ -74,22 +74,55 @@ await downloadTo(await signed(audioPath), `${work}/audio.mp3`);
 // Titulek do samostatného souboru, aby nevadily uvozovky ani diakritika.
 await writeFile(`${work}/title.txt`, `Temney\n${safeTitle}`);
 
-console.log("Renderuji 1920×1080 MP4…");
+const EFFECTS = ["static", "zoom", "wave", "zoom_wave", "blur"];
+const effect = EFFECTS.includes(process.env.EFFECT) ? process.env.EFFECT : "zoom_wave";
+const FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+const FPS = 12;
+const withWaves = effect === "wave" || effect === "zoom_wave";
+
+let baseChain;
+if (effect === "blur") {
+  // Rozmazané pozadí z coveru + ostrý obrázek přes celou výšku uprostřed.
+  baseChain = [
+    "[0:v]split[bgsrc][ctsrc]",
+    "[bgsrc]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,gblur=sigma=28,eq=brightness=-0.07[bgb]",
+    "[ctsrc]scale=-2:1010[ctr]",
+    "[bgb][ctr]overlay=(W-w)/2:(H-h)/2",
+  ].join(";");
+} else if (effect === "zoom" || effect === "zoom_wave") {
+  // Jemný pomalý přiblížení (Ken Burns). Upscale snižuje chvění zoompanu.
+  baseChain = [
+    "[0:v]scale=3840:-2",
+    `zoompan=z='min(1+0.00009*on,1.14)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1920x1080:fps=${FPS}`,
+  ].join(",");
+} else {
+  baseChain = "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black";
+}
+
+const titlePosition = withWaves ? "y=64" : "y=h-text_h-70";
+const titled = `${baseChain},drawtext=fontfile=${FONT}:textfile=/tmp/songcraft-render/title.txt:fontcolor=white:borderw=3:bordercolor=black:line_spacing=14:fontsize=52:x=(w-text_w)/2:${titlePosition}`;
+
+let filterComplex;
+let maps;
+if (withWaves) {
+  // Audio-reaktivní waveform pruk dole nad titulkem.
+  filterComplex = `${titled}[base];[1:a]asplit=2[aw][ws];[ws]showwaves=s=1920x170:mode=cline:colors=#E39A5B@0.85:rate=${FPS}[wv];[base][wv]overlay=x=0:y=H-h-34,format=yuv420p[v]`;
+  maps = ["-map", "[v]", "-map", "[aw]"];
+} else {
+  filterComplex = `${titled},format=yuv420p[v]`;
+  maps = ["-map", "[v]", "-map", "1:a"];
+}
+
+console.log(`Renderuji 1920×1080 MP4 (efekt: ${effect})…`);
 await run("ffmpeg", [
   "-y", "-hide_banner", "-loglevel", "error",
   "-loop", "1", "-i", `${work}/cover`,
   "-i", `${work}/audio.mp3`,
-  "-filter_complex",
-  [
-    "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease",
-    "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black",
-    "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:textfile=/tmp/songcraft-render/title.txt:fontcolor=white:borderw=3:bordercolor=black:line_spacing=14:fontsize=52:x=(w-text_w)/2:y=h-text_h-70",
-    "format=yuv420p[v]",
-  ].join(","),
-  "-map", "[v]", "-map", "1:a",
-  "-c:v", "libx264", "-tune", "stillimage", "-preset", "veryfast", "-crf", "21", "-r", "12",
+  "-filter_complex", filterComplex,
+  ...maps,
+  "-c:v", "libx264", "-tune", "stillimage", "-preset", "veryfast", "-crf", "21",
   "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
-  "-shortest", "-movflags", "+faststart",
+  "-shortest", "-r", String(FPS), "-movflags", "+faststart",
   `${work}/video.mp4`,
 ]);
 

@@ -18,8 +18,10 @@ Deno.serve(async (request) => {
   const supabase = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } });
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return json({ error: "Neplatné přihlášení." }, 401);
-  const input = await request.json().catch(() => null) as { action?: "create" | "check"; songId?: string; versionId?: string; jobId?: string } | null;
+  const input = await request.json().catch(() => null) as { action?: "create" | "check"; songId?: string; versionId?: string; jobId?: string; effect?: string } | null;
   if (!input?.action || !input.songId || !input.versionId) return json({ error: "Chybí skladba, finální MP3 nebo akce." }, 400);
+  const EFFECTS = ["static", "zoom", "wave", "zoom_wave", "blur"];
+  const effect = EFFECTS.includes(input.effect ?? "") ? input.effect! : "zoom_wave";
   const admin = createClient(url, serviceKey);
 
   const { data: song, error: songError } = await admin.from("sc_songs").select("id,title,cover_path,album_id,user_id").eq("id", input.songId).single();
@@ -40,7 +42,7 @@ Deno.serve(async (request) => {
     const dispatch = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/dispatches`, {
       method: "POST",
       headers: { Authorization: `Bearer ${githubToken}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
-      body: JSON.stringify({ event_type: "render-youtube", client_payload: { jobId, songId: song.id, versionId: version.id } }),
+      body: JSON.stringify({ event_type: "render-youtube", client_payload: { jobId, songId: song.id, versionId: version.id, effect } }),
     });
     if (!dispatch.ok && dispatch.status !== 204) {
       await admin.from("sc_video_jobs").update({ status: "failed", error: `Render se nepodařilo spustit (${dispatch.status}).` }).eq("id", jobId);

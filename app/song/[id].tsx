@@ -24,6 +24,7 @@ export default function SongDetailScreen() {
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const [versionOrder, setVersionOrder] = useState<"rating" | "newest">("rating");
   const [pendingMp3, setPendingMp3] = useState<{ uri: string; name: string; mimeType?: string | null; base64?: string | null } | null>(null);
+  const [youtubeEditor, setYoutubeEditor] = useState<null | { field: "description" | "tags" }>(null);
   const upload = trpc.studio.upload.useMutation();
   const createVersion = trpc.studio.createVersion.useMutation();
 
@@ -113,17 +114,53 @@ export default function SongDetailScreen() {
     <View style={styles.topbar}><IconButton label="Do knihovny" icon="arrow-back" onPress={() => router.replace("/(tabs)/library" as never)} /><Text numberOfLines={1} style={[styles.topbarTitle, { color: colors.foreground }]}>Detail skladby</Text><IconButton label="Upravit" icon="edit" onPress={() => router.push(`/song/${song.id}/edit` as never)} /></View>
     <View style={[styles.songHero, { backgroundColor: colors.surface, borderColor: colors.border }]}><CoverArt uri={songContent.coverUrl} title={song.title} size={92} /><View style={styles.songHeroCopy}><Text style={[styles.songName, { color: colors.foreground }]}>{song.title}</Text><Text style={[styles.songAlbum, { color: colors.muted }]}>{album?.name ?? "Bez alba"}</Text><View style={styles.complete}><MaterialIcons name="check-circle" size={15} color={colors.success} /><Text style={[styles.completeText, { color: colors.success }]}>položka skladby</Text></View></View></View>
     <ContentCard icon="auto-awesome" title="Prompt stylu" text={songContent.stylePrompt || "Prompt zatím nebyl vyplněn."} actionLabel="Kopírovat prompt" disabled={!songContent.stylePrompt} onAction={() => void copyText(songContent.stylePrompt, "Prompt")} />
+    <ContentCard icon="description" title="Popis na YouTube" text={song.youtubeDescription || "Popis videa zatím nebyl vyplněn."} actionLabel="Kopírovat popis" disabled={!song.youtubeDescription} onAction={() => void copyText(song.youtubeDescription ?? "", "Popis na YouTube")} onEdit={() => setYoutubeEditor({ field: "description" })} />
+    <ContentCard icon="sell" title="Tagy na YouTube" text={song.youtubeTags || "Tagy zatím nebyly vyplněny."} actionLabel="Kopírovat tagy" disabled={!song.youtubeTags} onAction={() => void copyText(song.youtubeTags ?? "", "Tagy na YouTube")} onEdit={() => setYoutubeEditor({ field: "tags" })} />
     <ContentCard icon="format-align-left" title="Text písně" text={songContent.lyrics || "Text písně zatím nebyl vyplněn."} actionLabel="Kopírovat text" disabled={!songContent.lyrics} onAction={() => void copyText(songContent.lyrics, "Text písně")} />
     <VersionAudioPlayer versions={sortedVersions} />
     <SectionTitle title={`Přiřazené MP3 (${versions.length})`} right={<View style={styles.pair}><Pressable onPress={() => void importMultiple()} disabled={upload.isPending || createVersion.isPending}><Text style={[styles.addLink, { color: colors.muted }]}>{upload.isPending || createVersion.isPending ? "Ukládám…" : "Import více"}</Text></Pressable><Pressable onPress={() => void chooseMp3()} disabled={upload.isPending || createVersion.isPending}><Text style={[styles.addLink, { color: colors.primary }]}>{upload.isPending || createVersion.isPending ? "" : "Přidat MP3"}</Text></Pressable></View>} />
     {versions.length ? <Pressable onPress={() => setVersionOrder((current) => current === "rating" ? "newest" : "rating")} style={({ pressed }) => [styles.sortControl, { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.68 : 1 }]}><MaterialIcons name={versionOrder === "rating" ? "star" : "schedule"} size={17} color={colors.primary} /><Text style={[styles.sortControlText, { color: colors.foreground }]}>{versionOrder === "rating" ? "Řazení: nejlepší hodnocení" : "Řazení: nejnovější verze"}</Text><MaterialIcons name="swap-vert" size={18} color={colors.muted} /></Pressable> : null}
     {sortedVersions.length ? sortedVersions.map((version) => <Pressable key={version.id} onPress={() => setSelectedVersion(version.id)} style={({ pressed }) => [styles.versionRow, { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}><View style={[styles.versionIcon, { backgroundColor: `${colors.primary}20` }]}><MaterialIcons name={version.isFinal ? "verified" : version.isPrimary ? "star" : "music-note"} size={21} color={version.isFinal ? colors.success : colors.primary} /></View><View style={styles.versionCopy}><View style={styles.versionTitleRow}><Text numberOfLines={1} style={[styles.versionLabel, { color: colors.foreground }]}>{version.label}</Text><View style={styles.statusBadges}>{version.isPrimary ? <Text style={[styles.mainBadge, { color: colors.primary }]}>HLAVNÍ</Text> : null}{version.isFinal ? <Text style={[styles.finalBadge, { color: colors.success }]}>FINÁLNÍ</Text> : null}</View></View><View style={styles.ratingLine}><RatingStars rating={version.rating} /><Text style={[styles.versionFile, { color: colors.muted }]}>{version.originalFileName} · {formatFileSize(version.byteSize)}</Text></View></View><MaterialIcons name="edit" size={19} color={colors.muted} /></Pressable>) : <EmptyState icon="audio-file" title="Zatím žádná zvuková verze" text="Přidej MP3 z telefonu nebo počítače. Ke každé skladbě můžeš vést více verzí." action={<PrimaryButton label="Přidat první MP3" icon="upload-file" onPress={() => void chooseMp3()} />} />}
-  </ScrollView><VersionEditor id={selectedVersion} onClose={() => setSelectedVersion(null)} /><Mp3IntakeSheet asset={pendingMp3} defaultLabel={`V${versions.length + 1}`} loading={upload.isPending || createVersion.isPending} onClose={() => setPendingMp3(null)} onSave={saveMp3} /></ScreenContainer>;
+  </ScrollView><VersionEditor id={selectedVersion} onClose={() => setSelectedVersion(null)} /><Mp3IntakeSheet asset={pendingMp3} defaultLabel={`V${versions.length + 1}`} loading={upload.isPending || createVersion.isPending} onClose={() => setPendingMp3(null)} onSave={saveMp3} />{youtubeEditor ? <YoutubeTextEditor songId={songId} field={youtubeEditor.field} onClose={() => setYoutubeEditor(null)} /> : null}</ScreenContainer>;
 }
 
-function ContentCard({ icon, title, text, actionLabel, disabled, onAction }: { icon: React.ComponentProps<typeof MaterialIcons>["name"]; title: string; text: string; actionLabel: string; disabled: boolean; onAction: () => void }) {
+function YoutubeTextEditor({ songId, field, onClose }: { songId: string; field: "description" | "tags"; onClose: () => void }) {
   const colors = useColors();
-  return <View style={[styles.contentCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.cardTitle}><View style={[styles.cardIcon, { backgroundColor: `${colors.primary}1E` }]}><MaterialIcons name={icon} size={18} color={colors.primary} /></View><Text style={[styles.cardTitleText, { color: colors.foreground }]}>{title}</Text></View><Text numberOfLines={5} style={[styles.cardText, { color: colors.muted }]}>{text}</Text><Pressable disabled={disabled} onPress={onAction} style={({ pressed }) => [styles.copyButton, { borderColor: colors.border, opacity: disabled ? 0.45 : pressed ? 0.65 : 1 }]}><MaterialIcons name="content-copy" size={16} color={colors.primary} /><Text style={[styles.copyButtonText, { color: colors.primary }]}>{actionLabel}</Text></Pressable></View>;
+  const utils = trpc.useUtils();
+  const snapshot = trpc.studio.snapshot.useQuery();
+  const update = trpc.studio.updateSong.useMutation();
+  const generate = trpc.studio.generateYoutubeText.useMutation();
+  const song = snapshot.data?.songs.find((entry) => entry.id === songId);
+  const [value, setValue] = useState(field === "description" ? song?.youtubeDescription ?? "" : song?.youtubeTags ?? "");
+  const isDescription = field === "description";
+  const title = isDescription ? "Popis na YouTube" : "Tagy na YouTube";
+
+  const runGeneration = async () => {
+    try {
+      const result = await generate.mutateAsync({ action: isDescription ? "description" : "tags", songId });
+      setValue(result.text);
+      Alert.alert("AI je hotová", isDescription ? "Popis byl vygenerovaný z textu a žánru skladby. Můžeš ho upravit a uložit." : "Tagy byly vygenerované. Zkontroluj je, uprav a ulož.");
+    } catch (error) { Alert.alert("Generování se nezdařilo", error instanceof Error ? error.message : "Zkus to znovu za chvíli."); }
+  };
+  const save = async () => {
+    try {
+      await update.mutateAsync(isDescription ? { id: songId, youtubeDescription: value.trim() || null } : { id: songId, youtubeTags: value.trim() || null });
+      await utils.studio.snapshot.invalidate();
+      onClose();
+    } catch (error) { Alert.alert("Uložení se nezdařilo", error instanceof Error ? error.message : "Zkus to znovu."); }
+  };
+
+  return <Modal visible transparent animationType="slide" onRequestClose={onClose}><View style={styles.modalShade}><View style={[styles.sheet, { backgroundColor: colors.background }]}><View style={[styles.handle, { backgroundColor: colors.border }]} /><View style={styles.sheetTop}><View><Text style={[styles.sheetTitle, { color: colors.foreground }]}>{title}</Text><Text numberOfLines={1} style={[styles.sheetFile, { color: colors.muted }]}>Ruční zápis nebo návrh od AI</Text></View><IconButton icon="close" label="Zavřít" onPress={onClose} /></View><ScrollView contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator={false}>
+    <PrimaryButton label={generate.isPending ? "AI píše…" : `Vygenerovat ${isDescription ? "popis" : "tagy"} pomocí AI`} icon="auto-awesome" onPress={() => void runGeneration()} disabled={generate.isPending} />
+    {generate.isPending ? <Text style={[styles.metaDescription, { color: colors.muted }]}>Čtu text, žánr a styl skladby…</Text> : null}
+    <Field label={isDescription ? "Popis videa" : "Tagy (oddělené čárkou)"} value={value} onChangeText={setValue} multiline placeholder={isDescription ? "Text popisu můžeš přepsat vlastníma rukama…" : "temney, nová skladba, synthwave, …"} colors={colors} />
+    <PrimaryButton label="Uložit ke skladbě" icon="save" onPress={() => void save()} disabled={update.isPending || generate.isPending} />
+  </ScrollView></View></View></Modal>;
+}
+
+function ContentCard({ icon, title, text, actionLabel, disabled, onAction, onEdit }: { icon: React.ComponentProps<typeof MaterialIcons>["name"]; title: string; text: string; actionLabel: string; disabled: boolean; onAction: () => void; onEdit?: () => void }) {
+  const colors = useColors();
+  return <View style={[styles.contentCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.cardTitle}><View style={[styles.cardIcon, { backgroundColor: `${colors.primary}1E` }]}><MaterialIcons name={icon} size={18} color={colors.primary} /></View><Text style={[styles.cardTitleText, { color: colors.foreground }]}>{title}</Text>{onEdit ? <Pressable onPress={onEdit} hitSlop={6} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}><MaterialIcons name="edit" size={18} color={colors.primary} /></Pressable> : null}</View><Text numberOfLines={5} style={[styles.cardText, { color: colors.muted }]}>{text}</Text><Pressable disabled={disabled} onPress={onAction} style={({ pressed }) => [styles.copyButton, { borderColor: colors.border, opacity: disabled ? 0.45 : pressed ? 0.65 : 1 }]}><MaterialIcons name="content-copy" size={16} color={colors.primary} /><Text style={[styles.copyButtonText, { color: colors.primary }]}>{actionLabel}</Text></Pressable></View>;
 }
 
 function Mp3IntakeSheet({ asset, defaultLabel, loading, onClose, onSave }: { asset: { name: string } | null; defaultLabel: string; loading: boolean; onClose: () => void; onSave: (label: string, note: string) => Promise<void> }) {

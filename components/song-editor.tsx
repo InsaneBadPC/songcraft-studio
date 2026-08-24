@@ -2,6 +2,7 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { IconButton, LoadingState, SectionTitle } from "@/components/studio-ui";
@@ -10,10 +11,11 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { assetToBase64 } from "@/lib/file-base64";
+import { takePickedStylePrompt } from "@/lib/style-prompt-picker";
 import { trpc } from "@/lib/trpc";
 
-type SongForm = { title: string; albumId: string | null; stylePrompt: string; lyrics: string; notes: string; coverStorageKey: string | null; coverUrl: string | null };
-const emptyForm: SongForm = { title: "", albumId: null, stylePrompt: "", lyrics: "", notes: "", coverStorageKey: null, coverUrl: null };
+type SongForm = { title: string; albumId: string | null; stylePrompts: string[]; lyrics: string; notes: string; coverStorageKey: string | null; coverUrl: string | null };
+const emptyForm: SongForm = { title: "", albumId: null, stylePrompts: [""], lyrics: "", notes: "", coverStorageKey: null, coverUrl: null };
 
 export function SongEditor({ songId }: { songId?: string }) {
   const colors = useColors();
@@ -26,6 +28,7 @@ export function SongEditor({ songId }: { songId?: string }) {
   const upload = trpc.studio.upload.useMutation();
   const create = trpc.studio.createSong.useMutation();
   const update = trpc.studio.updateSong.useMutation();
+  const createStylePrompt = trpc.studio.createStylePrompt.useMutation();
   const createCoverGeneration = trpc.studio.createCoverGeneration.useMutation();
   const checkCoverGeneration = trpc.studio.checkCoverGeneration.useMutation();
   const [coverGenerating, setCoverGenerating] = useState(false);
@@ -33,7 +36,11 @@ export function SongEditor({ songId }: { songId?: string }) {
   const [coverNote, setCoverNote] = useState("");
   const albumName = snapshot.data?.albums.find((album) => album.id === form.albumId)?.name ?? "Bez alba";
 
-  useEffect(() => { if (song) setForm({ title: song.title, albumId: song.albumId, stylePrompt: song.stylePrompt ?? "", lyrics: song.lyrics ?? "", notes: song.notes ?? "", coverStorageKey: song.coverStorageKey, coverUrl: song.coverUrl }); }, [song]);
+  useEffect(() => { if (song) setForm({ title: song.title, albumId: song.albumId, stylePrompts: song.stylePrompts.length ? [...song.stylePrompts] : [""], lyrics: song.lyrics ?? "", notes: song.notes ?? "", coverStorageKey: song.coverStorageKey, coverUrl: song.coverUrl }); }, [song]);
+  useFocusEffect(useMemo(() => () => {
+    const picked = takePickedStylePrompt();
+    if (picked) setForm((current) => ({ ...current, stylePrompts: [...current.stylePrompts.filter((entry) => entry.trim()), picked] }));
+  }, []));
   if (songId && snapshot.isLoading) return <ScreenContainer><LoadingState /></ScreenContainer>;
   if (songId && !song) return <ScreenContainer className="p-6 justify-center"><Text style={[styles.error, { color: colors.muted }]}>Skladba nebyla nalezena.</Text></ScreenContainer>;
 
@@ -41,7 +48,8 @@ export function SongEditor({ songId }: { songId?: string }) {
     if (!form.title.trim()) { Alert.alert("Chybí název skladby", "Zadej název, pod kterým chceš skladbu vést v katalogu."); return; }
     setSaving(true);
     try {
-      const payload = { title: form.title.trim(), albumId: form.albumId, stylePrompt: form.stylePrompt || null, lyrics: form.lyrics || null, notes: form.notes || null, coverStorageKey: form.coverStorageKey, coverUrl: form.coverUrl };
+      const stylePrompts = form.stylePrompts.map((entry) => entry.trim()).filter(Boolean);
+      const payload = { title: form.title.trim(), albumId: form.albumId, stylePrompts, lyrics: form.lyrics || null, notes: form.notes || null, coverStorageKey: form.coverStorageKey, coverUrl: form.coverUrl };
       const savedId = songId ? (await update.mutateAsync({ id: songId, ...payload }), songId) : await create.mutateAsync(payload);
       await utils.studio.snapshot.invalidate();
       router.replace(`/song/${savedId}` as never);
@@ -56,7 +64,7 @@ export function SongEditor({ songId }: { songId?: string }) {
   };
   const openCoverDialog = () => {
     if (!songId) { Alert.alert("Nejprve skladbu ulož", "Nejdřív ulož název, album a text. Pak může aplikace vytvořit obal z přesně těchto uložených údajů."); return; }
-    if (!form.stylePrompt.trim() && !form.lyrics.trim()) { Alert.alert("Doplň obsah skladby", "Pro lepší cover zapiš alespoň prompt pro styl nebo část textu písně."); return; }
+    if (!form.stylePrompts.some((entry) => entry.trim()) && !form.lyrics.trim()) { Alert.alert("Doplň obsah skladby", "Pro lepší cover zapiš alespoň prompt pro styl nebo část textu písně."); return; }
     setCoverNote("");
     setCoverDialogVisible(true);
   };
@@ -75,6 +83,15 @@ export function SongEditor({ songId }: { songId?: string }) {
       Alert.alert("Cover je stále ve frontě", "Cloudová AI má nyní delší frontu. Zkus generování za chvíli spustit znovu.");
     } catch (error) { Alert.alert("Cover se nepodařilo vytvořit", error instanceof Error ? error.message : "Zkus to znovu za chvíli."); } finally { setCoverGenerating(false); }
   };
+  const saveFirstPromptToLibrary = async () => {
+    const content = form.stylePrompts.map((entry) => entry.trim()).filter(Boolean)[0];
+    if (!content) return;
+    try {
+      await createStylePrompt.mutateAsync({ content });
+      await utils.studio.snapshot.invalidate();
+      Alert.alert("Uloženo do databáze", "Prompt najdeš v databázi promptů stylu a můžeš ho použít u další skladby.");
+    } catch (error) { Alert.alert("Uložení se nezdařilo", error instanceof Error ? error.message : "Zkus to znovu."); }
+  };
 
   return <ScreenContainer edges={["top", "bottom", "left", "right"]}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"><View style={styles.topbar}><IconButton label="Zpět" icon="arrow-back" onPress={() => router.back()} /><Text numberOfLines={1} style={[styles.topbarName, { color: colors.foreground }]}>{songId ? "Upravit skladbu" : "Nová skladba"}</Text><Pressable onPress={() => void save()} style={({ pressed }) => [styles.save, { opacity: saving || pressed ? 0.6 : 1 }]}><Text style={[styles.saveText, { color: colors.primary }]}>{saving ? "Ukládám" : "Uložit"}</Text></Pressable></View>
     <View style={[styles.flow, { backgroundColor: `${colors.primary}13`, borderColor: `${colors.primary}45` }]}><MaterialIcons name="account-tree" size={20} color={colors.primary} /><Text style={[styles.flowText, { color: colors.muted }]}>Tato položka drží pohromadě text, obrázek, MP3 verze, metadata a album.</Text></View>
@@ -82,9 +99,18 @@ export function SongEditor({ songId }: { songId?: string }) {
     <Field label="Název skladby" value={form.title} onChangeText={(title) => setForm((current) => ({ ...current, title }))} placeholder="Např. Noční signál" autoFocus={!songId} colors={colors} />
     <SectionTitle title="Album" />
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.albumChips}><AlbumChip active={!form.albumId} label="Bez alba" onPress={() => setForm((current) => ({ ...current, albumId: null }))} />{snapshot.data?.albums.map((album) => <AlbumChip key={album.id} active={form.albumId === album.id} label={album.name} onPress={() => setForm((current) => ({ ...current, albumId: album.id }))} />)}</ScrollView>
-    <SectionTitle title="Obsah propojeného textu" />
-    <Field label="1. Prompt pro styl" helper="Například žánr, tempo, nálada, nástroje a typ hlasu." value={form.stylePrompt} onChangeText={(stylePrompt) => setForm((current) => ({ ...current, stylePrompt }))} placeholder="Atmosférický pop, 96 BPM, jemný mužský vokál…" multiline colors={colors} />
-    <Field label="2. Samotný text písně" value={form.lyrics} onChangeText={(lyrics) => setForm((current) => ({ ...current, lyrics }))} placeholder="[Sloka 1]\n…" multiline tall colors={colors} />
+    <SectionTitle title="Prompty pro styl" />
+    <View style={styles.promptTools}><Pressable onPress={() => router.push("/prompts?pick=1" as never)} style={({ pressed }) => [styles.promptTool, { borderColor: colors.border, opacity: pressed ? 0.65 : 1 }]}><MaterialIcons name="library-books" size={16} color={colors.primary} /><Text style={[styles.promptToolText, { color: colors.primary }]}>Vybrat z databáze</Text></Pressable><Pressable onPress={() => void saveFirstPromptToLibrary()} disabled={!form.stylePrompts.some((entry) => entry.trim())} style={({ pressed }) => [styles.promptTool, { borderColor: colors.border, opacity: !form.stylePrompts.some((entry) => entry.trim()) || pressed ? 0.45 : 1 }]}><MaterialIcons name="bookmarks" size={16} color={colors.primary} /><Text style={[styles.promptToolText, { color: colors.primary }]}>Uložit do databáze</Text></Pressable></View>
+    {form.stylePrompts.map((value, index) => (
+      <View key={index} style={styles.promptRow}>
+        <View style={styles.promptField}>
+          <Field label={`Prompt stylu ${index + 1}`} helper={index === 0 ? "Například žánr, tempo, nálada, nástroje a typ hlasu." : undefined} value={value} onChangeText={(text) => setForm((current) => ({ ...current, stylePrompts: current.stylePrompts.map((entry, position) => position === index ? text : entry) }))} placeholder={index === 0 ? "Atmosférický pop, 96 BPM, jemný mužský vokál…" : "Další varianta nebo rozšíření promptu…"} multiline colors={colors} />
+        </View>
+        {form.stylePrompts.length > 1 ? <IconButton label="Odebrat prompt" icon="remove-circle-outline" onPress={() => setForm((current) => ({ ...current, stylePrompts: current.stylePrompts.filter((_, position) => position !== index) }))} /> : null}
+      </View>
+    ))}
+    <Pressable onPress={() => setForm((current) => ({ ...current, stylePrompts: [...current.stylePrompts, ""] }))} style={({ pressed }) => [styles.addPrompt, { borderColor: colors.primary, opacity: pressed ? 0.62 : 1 }]}><MaterialIcons name="add" size={19} color={colors.primary} /><Text style={[styles.addPromptText, { color: colors.primary }]}>Přidat další prompt</Text></Pressable>
+    <Field label="Samotný text písně" value={form.lyrics} onChangeText={(lyrics) => setForm((current) => ({ ...current, lyrics }))} placeholder="[Sloka 1]\n…" multiline tall colors={colors} />
     <RhymeFinder onInsert={(word) => setForm((current) => ({ ...current, lyrics: `${current.lyrics}${current.lyrics && !/\s$/.test(current.lyrics) ? " " : ""}${word}` }))} />
     <Field label="Poznámky" value={form.notes} onChangeText={(notes) => setForm((current) => ({ ...current, notes }))} placeholder="Aranž, reference, nápady na klip…" multiline colors={colors} />
     <Pressable onPress={() => void save()} style={({ pressed }) => [styles.saveButton, { backgroundColor: colors.primary, opacity: saving || pressed ? 0.68 : 1 }]}><MaterialIcons name="save" size={20} color="#141317" /><Text style={styles.saveButtonText}>{saving ? "Ukládám skladbu…" : "Uložit položku skladby"}</Text></Pressable>
@@ -99,4 +125,14 @@ function ContextLine({ label, value, colors }: { label: string; value: string; c
 
 function Field({ label, helper, value, onChangeText, placeholder, multiline, tall, autoFocus, colors }: { label: string; helper?: string; value: string; onChangeText: (value: string) => void; placeholder: string; multiline?: boolean; tall?: boolean; autoFocus?: boolean; colors: ReturnType<typeof useColors> }) { return <View style={styles.field}><Text style={[styles.fieldLabel, { color: colors.foreground }]}>{label}</Text>{helper ? <Text style={[styles.fieldHelper, { color: colors.muted }]}>{helper}</Text> : null}<TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={colors.muted} multiline={multiline} autoFocus={autoFocus} textAlignVertical={multiline ? "top" : "center"} style={[styles.input, multiline && styles.multiline, tall && styles.tall, { color: colors.foreground, backgroundColor: colors.surface, borderColor: colors.border }]} /></View>; }
 function AlbumChip({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) { const colors = useColors(); return <Pressable onPress={onPress} style={({ pressed }) => [styles.albumChip, { backgroundColor: active ? colors.primary : colors.surface, borderColor: active ? colors.primary : colors.border, opacity: pressed ? 0.68 : 1 }]}><Text numberOfLines={1} style={[styles.albumChipText, { color: active ? "#141317" : colors.foreground }]}>{label}</Text></Pressable>; }
-const styles = StyleSheet.create({ content: { padding: 20, paddingTop: 14, paddingBottom: 38, gap: 18 }, topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }, topbarName: { flex: 1, fontSize: 15, fontWeight: "800", textAlign: "center" }, save: { minWidth: 49, minHeight: 42, alignItems: "flex-end", justifyContent: "center" }, saveText: { fontSize: 14, fontWeight: "800" }, flow: { borderWidth: 1, borderRadius: 16, padding: 13, flexDirection: "row", gap: 9, alignItems: "center" }, flowText: { flex: 1, fontSize: 12, lineHeight: 17 }, coverBlock: { gap: 9 }, cover: { minHeight: 180, aspectRatio: 16 / 9, borderWidth: 1, borderRadius: 20, padding: 18, alignItems: "center", justifyContent: "center", gap: 6, overflow: "hidden" }, coverImage: { width: "100%", height: "100%", borderRadius: 13 }, coverIcon: { width: 47, height: 47, borderRadius: 15, alignItems: "center", justifyContent: "center" }, coverTitle: { fontSize: 15, fontWeight: "800" }, coverText: { fontSize: 12, textAlign: "center", lineHeight: 17 }, generateCover: { minHeight: 66, borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 10 }, generateCopy: { flex: 1, gap: 2 }, generateTitle: { fontSize: 14, fontWeight: "900" }, generateText: { fontSize: 11, lineHeight: 15 }, field: { gap: 7 }, fieldLabel: { fontSize: 15, fontWeight: "800" }, fieldHelper: { fontSize: 12, lineHeight: 17 }, input: { minHeight: 49, borderWidth: 1, borderRadius: 15, paddingHorizontal: 14, fontSize: 15 }, multiline: { minHeight: 116, paddingVertical: 13, lineHeight: 21 }, tall: { minHeight: 255 }, albumChips: { gap: 8, paddingRight: 20 }, albumChip: { borderWidth: 1, height: 37, borderRadius: 20, justifyContent: "center", paddingHorizontal: 14 }, albumChipText: { fontSize: 13, fontWeight: "700" }, saveButton: { minHeight: 53, borderRadius: 16, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center" }, saveButtonText: { color: "#141317", fontSize: 15, fontWeight: "900" }, error: { fontSize: 15, textAlign: "center" }, modalShade: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.58)" }, coverSheet: { maxHeight: "93%", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 9 }, sheetHandle: { height: 4, width: 40, borderRadius: 3, alignSelf: "center", marginBottom: 12 }, dialogTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 12 }, dialogHeading: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 }, dialogIcon: { height: 38, width: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" }, dialogTitle: { fontSize: 18, fontWeight: "900" }, dialogSubtitle: { fontSize: 12, marginTop: 2 }, dialogContent: { gap: 12, padding: 20, paddingTop: 4, paddingBottom: 40 }, dialogIntro: { fontSize: 12, lineHeight: 17 }, contextLine: { minHeight: 57, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, justifyContent: "center", gap: 3 }, contextBlock: { gap: 6 }, contextLabel: { fontSize: 11, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.35 }, contextValue: { fontSize: 14, fontWeight: "800" }, lyricsPreview: { borderWidth: 1, borderRadius: 14, padding: 12, minHeight: 78, fontSize: 13, lineHeight: 18 }, noteInput: { minHeight: 92, borderWidth: 1, borderRadius: 14, padding: 12, fontSize: 14, lineHeight: 19 }, guarantee: { borderWidth: 1, borderRadius: 14, padding: 12, flexDirection: "row", gap: 8, alignItems: "flex-start" }, guaranteeText: { flex: 1, fontSize: 12, fontWeight: "700", lineHeight: 17 }, dialogGenerate: { minHeight: 52, borderRadius: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 2 }, dialogGenerateText: { color: "#141317", fontSize: 15, fontWeight: "900" } });
+
+const styles = StyleSheet.create({
+  content: { padding: 20, paddingTop: 14, paddingBottom: 38, gap: 18 }, topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }, topbarName: { flex: 1, fontSize: 15, fontWeight: "800", textAlign: "center" }, save: { minWidth: 49, minHeight: 42, alignItems: "flex-end", justifyContent: "center" }, saveText: { fontSize: 14, fontWeight: "800" }, flow: { borderWidth: 1, borderRadius: 16, padding: 13, flexDirection: "row", gap: 9, alignItems: "center" }, flowText: { flex: 1, fontSize: 12, lineHeight: 17 },
+  promptTools: { flexDirection: "row", gap: 8 },
+  promptTool: { borderWidth: 1, borderRadius: 13, paddingHorizontal: 12, height: 34, flexDirection: "row", alignItems: "center", gap: 6 },
+  promptToolText: { fontSize: 12.5, fontWeight: "800" },
+  promptRow: { flexDirection: "row", alignItems: "flex-start", gap: 4 },
+  promptField: { flex: 1 },
+  addPrompt: { minHeight: 44, borderWidth: 1, borderStyle: "dashed", borderRadius: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
+  addPromptText: { fontSize: 13.5, fontWeight: "800" },
+  coverBlock: { gap: 9 }, cover: { minHeight: 180, aspectRatio: 16 / 9, borderWidth: 1, borderRadius: 20, padding: 18, alignItems: "center", justifyContent: "center", gap: 6, overflow: "hidden" }, coverImage: { width: "100%", height: "100%", borderRadius: 13 }, coverIcon: { width: 47, height: 47, borderRadius: 15, alignItems: "center", justifyContent: "center" }, coverTitle: { fontSize: 15, fontWeight: "800" }, coverText: { fontSize: 12, textAlign: "center", lineHeight: 17 }, generateCover: { minHeight: 66, borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 10 }, generateCopy: { flex: 1, gap: 2 }, generateTitle: { fontSize: 14, fontWeight: "900" }, generateText: { fontSize: 11, lineHeight: 15 }, field: { gap: 7 }, fieldLabel: { fontSize: 15, fontWeight: "800" }, fieldHelper: { fontSize: 12, lineHeight: 17 }, input: { minHeight: 49, borderWidth: 1, borderRadius: 15, paddingHorizontal: 14, fontSize: 15 }, multiline: { minHeight: 116, paddingVertical: 13, lineHeight: 21 }, tall: { minHeight: 255 }, albumChips: { gap: 8, paddingRight: 20 }, albumChip: { borderWidth: 1, height: 37, borderRadius: 20, justifyContent: "center", paddingHorizontal: 14 }, albumChipText: { fontSize: 13, fontWeight: "700" }, saveButton: { minHeight: 53, borderRadius: 16, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center" }, saveButtonText: { color: "#141317", fontSize: 15, fontWeight: "900" }, error: { fontSize: 15, textAlign: "center" }, modalShade: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.58)" }, coverSheet: { maxHeight: "93%", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 9 }, sheetHandle: { height: 4, width: 40, borderRadius: 3, alignSelf: "center", marginBottom: 12 }, dialogTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 12 }, dialogHeading: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 }, dialogIcon: { height: 38, width: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" }, dialogTitle: { fontSize: 18, fontWeight: "900" }, dialogSubtitle: { fontSize: 12, marginTop: 2 }, dialogContent: { gap: 12, padding: 20, paddingTop: 4, paddingBottom: 40 }, dialogIntro: { fontSize: 12, lineHeight: 17 }, contextLine: { minHeight: 57, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, justifyContent: "center", gap: 3 }, contextBlock: { gap: 6 }, contextLabel: { fontSize: 11, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.35 }, contextValue: { fontSize: 14, fontWeight: "800" }, lyricsPreview: { borderWidth: 1, borderRadius: 14, padding: 12, minHeight: 78, fontSize: 13, lineHeight: 18 }, noteInput: { minHeight: 92, borderWidth: 1, borderRadius: 14, padding: 12, fontSize: 14, lineHeight: 19 }, guarantee: { borderWidth: 1, borderRadius: 14, padding: 12, flexDirection: "row", gap: 8, alignItems: "flex-start" }, guaranteeText: { flex: 1, fontSize: 12, fontWeight: "700", lineHeight: 17 }, dialogGenerate: { minHeight: 52, borderRadius: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 2 }, dialogGenerateText: { color: "#141317", fontSize: 15, fontWeight: "900" } });

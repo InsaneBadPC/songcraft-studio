@@ -29,4 +29,5 @@ jobs:
           JOB_ID: ${{ github.event.client_payload.jobId }}
           SONG_ID: ${{ github.event.client_payload.songId }}
           VERSION_ID: ${{ github.event.client_payload.versionId }}
+          EFFECT: ${{ github.event.client_payload.effect }}
         run: node scripts/render/render-youtube.mjs
