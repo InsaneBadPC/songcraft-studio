@@ -114,15 +114,22 @@ if (withWaves) {
 }
 
 console.log(`Renderuji 1920×1080 MP4 (efekt: ${effect})…`);
+// Explicitní délka z audio stopy: -shortest sám nezastaví nekonečný smyčený
+// obrazový vstup u všech verzí ffmpeg.
+const probe = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", `${work}/audio.mp3`]);
+const durationSeconds = Number.parseFloat(probe.stdout.trim());
+if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) await fail("Nepodařilo se zjistit délku MP3.");
 await run("ffmpeg", [
   "-y", "-hide_banner", "-loglevel", "error",
   "-loop", "1", "-i", `${work}/cover`,
   "-i", `${work}/audio.mp3`,
   "-filter_complex", filterComplex,
   ...maps,
-  "-c:v", "libx264", "-tune", "stillimage", "-preset", "veryfast", "-crf", "21",
+  "-c:v", "libx264", "-tune", "stillimage", "-preset", "veryfast", "-crf", "23",
+  "-maxrate", "6M", "-bufsize", "12M",
   "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
-  "-shortest", "-r", String(FPS), "-movflags", "+faststart",
+  "-t", durationSeconds.toFixed(2),
+  "-r", String(FPS), "-movflags", "+faststart",
   `${work}/video.mp4`,
 ]);
 
