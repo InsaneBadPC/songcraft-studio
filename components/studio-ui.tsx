@@ -1,5 +1,6 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import { type ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -16,9 +17,25 @@ export function StudioHeader({ eyebrow, title, action }: { eyebrow?: string; tit
   const colors = useColors();
   return (
     <View style={styles.header}>
+      <LinearGradient
+        colors={[`${colors.primary}26`, "#7C3AED1F", "transparent"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0.6 }}
+        style={styles.headerGlow}
+      />
       <View style={styles.headerCopy}>
-        {eyebrow ? <Text style={[styles.eyebrow, { color: colors.primary }]}>{eyebrow.toUpperCase()}</Text> : null}
+        {eyebrow ? (
+          <Text style={[styles.eyebrow, { color: colors.primary }]}>{eyebrow.toUpperCase()}</Text>
+        ) : null}
         <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
+        <View style={{ marginTop: 8 }}>
+          <LinearGradient
+            colors={[colors.primary, "#FFC53D", "#00E68A"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ height: 4, borderRadius: 2, width: 76 }}
+          />
+        </View>
       </View>
       {action}
     </View>
@@ -85,7 +102,8 @@ export function formatFileSize(bytes: number) {
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 22 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 22, position: "relative", borderRadius: 20, padding: 16 },
+  headerGlow: { borderRadius: 20 },
   headerCopy: { flex: 1, gap: 4 },
   eyebrow: { fontSize: 11, lineHeight: 15, fontWeight: "800", letterSpacing: 1.2 },
   title: { fontSize: 29, lineHeight: 35, fontWeight: "800", letterSpacing: -0.6 },
