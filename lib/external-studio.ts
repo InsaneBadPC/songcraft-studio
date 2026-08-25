@@ -181,8 +181,8 @@ export async function importExternalDocx(fileName: string, base64: string) {
   return callExternalImport<{ id: string }>({ action: "import_docx", fileName, base64 });
 }
 
-export async function importExternalGoogleDocument(url: string, title: string) {
-  return callExternalImport<{ id: string }>({ action: "import_google_document", url, title });
+export async function importExternalGoogleDocument(url: string, title?: string) {
+  return callExternalImport<{ id: string }>({ action: "import_google_document", url, ...(title?.trim() ? { title: title.trim() } : {}) });
 }
 
 export async function exportExternalLibrary(albumId?: string) {

@@ -84,7 +84,7 @@ export const trpc = {
     deleteStylePrompt: { useMutation: () => useMutation({ mutationFn: ({ id }: { id: string | number }) => deleteExternalStylePrompt(String(id)) }) },
     generateYoutubeText: { useMutation: () => useMutation({ mutationFn: ({ action, songId }: { action: YoutubeCopyAction; songId: string | number }) => generateExternalYoutubeText(action, String(songId)) }) },
     importDocx: { useMutation: () => useMutation({ mutationFn: ({ fileName, base64 }: { fileName: string; base64: string }) => importExternalDocx(fileName, base64).then((result) => result.id) }) },
-    importGoogleDocument: { useMutation: () => useMutation({ mutationFn: ({ url, title }: { url: string; title: string }) => importExternalGoogleDocument(url, title).then((result) => result.id) }) },
+    importGoogleDocument: { useMutation: () => useMutation({ mutationFn: ({ url, title }: { url: string; title?: string }) => importExternalGoogleDocument(url, title).then((result) => result.id) }) },
   },
 };
 
