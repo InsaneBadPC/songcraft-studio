@@ -1,7 +1,7 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { type ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useColors } from "@/hooks/use-colors";
@@ -13,7 +13,7 @@ export function resolveAssetUrl(uri?: string | null) {
   return baseUrl ? `${baseUrl}${uri.startsWith("/") ? uri : `/${uri}`}` : uri;
 }
 
-export function StudioHeader({ eyebrow, title, action }: { eyebrow?: string; title: string; action?: ReactNode }) {
+export const StudioHeader = memo(function StudioHeader({ eyebrow, title, action }: { eyebrow?: string; title: string; action?: ReactNode }) {
   const colors = useColors();
   return (
     <View style={styles.header}>
@@ -40,7 +40,7 @@ export function StudioHeader({ eyebrow, title, action }: { eyebrow?: string; tit
       {action}
     </View>
   );
-}
+});
 
 export function PrimaryButton({ label, icon = "add", onPress, disabled = false }: { label: string; icon?: React.ComponentProps<typeof MaterialIcons>["name"]; onPress: () => void; disabled?: boolean }) {
   const colors = useColors();
