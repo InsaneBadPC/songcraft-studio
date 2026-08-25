@@ -15,14 +15,15 @@ export function TextImporter() {
   const utils = trpc.useUtils();
   const createDocument = trpc.studio.createDocument.useMutation();
   const importDocx = trpc.studio.importDocx.useMutation();
+  const importPdf = trpc.studio.importPdf.useMutation();
   const importGoogleDocument = trpc.studio.importGoogleDocument.useMutation();
   const [visible, setVisible] = useState(false);
   const [googleLinks, setGoogleLinks] = useState("");
-  const pending = createDocument.isPending || importDocx.isPending || importGoogleDocument.isPending;
+  const pending = createDocument.isPending || importDocx.isPending || importPdf.isPending || importGoogleDocument.isPending;
 
   const finish = async (id: string) => { await utils.studio.snapshot.invalidate(); setVisible(false); router.push(`/text/${id}` as never); };
   const readFile = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ type: ["text/plain", "text/markdown", "text/html", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/octet-stream"], multiple: true, copyToCacheDirectory: true });
+    const result = await DocumentPicker.getDocumentAsync({ type: ["text/plain", "text/markdown", "text/html", "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/octet-stream"], multiple: true, copyToCacheDirectory: true });
     if (result.canceled) return;
     try {
       const createdIds: string[] = [];
@@ -36,6 +37,11 @@ export function TextImporter() {
         if (/\.docx$/i.test(asset.name)) {
           const base64 = await assetToBase64(asset.uri, asset.base64);
           createdIds.push(await importDocx.mutateAsync({ fileName: asset.name, base64 }));
+          continue;
+        }
+        if (/\.pdf$/i.test(asset.name) || asset.mimeType === "application/pdf") {
+          const base64 = await assetToBase64(asset.uri, asset.base64);
+          createdIds.push(await importPdf.mutateAsync({ fileName: asset.name, base64 }));
           continue;
         }
         if (!/\.(txt|md|markdown|html?|csv)$/i.test(asset.name)) {
@@ -94,7 +100,7 @@ export function TextImporter() {
 
   return <><Pressable onPress={() => setVisible(true)} style={({ pressed }) => [styles.trigger, { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.68 : 1 }]}><MaterialIcons name="file-download" size={20} color={colors.primary} /><Text style={[styles.triggerText, { color: colors.foreground }]}>Importovat</Text></Pressable>
     <Modal visible={visible} transparent animationType="slide" onRequestClose={() => setVisible(false)}><View style={styles.shade}><View style={[styles.sheet, { backgroundColor: colors.background }]}><View style={[styles.handle, { backgroundColor: colors.border }]} /><View style={styles.top}><View><Text style={[styles.title, { color: colors.foreground }]}>Importovat text</Text><Text style={[styles.subtitle, { color: colors.muted }]}>Vznikne nový návrh v katalogu textů.</Text></View><Pressable onPress={() => setVisible(false)} style={[styles.close, { backgroundColor: colors.surface }]}><MaterialIcons name="close" size={20} color={colors.foreground} /></Pressable></View>
-      <View style={[styles.importCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={[styles.cardIcon, { backgroundColor: `${colors.primary}1A` }]}><MaterialIcons name="description" size={22} color={colors.primary} /></View><View style={styles.cardCopy}><Text style={[styles.cardTitle, { color: colors.foreground }]}>Soubory z telefonu nebo webu</Text><Text style={[styles.cardText, { color: colors.muted }]}>TXT, Markdown, HTML, CSV a DOCX. Můžeš vybrat více souborů najednou.</Text><Text style={[styles.hint, { color: colors.primary }]}>💡 V dialogu nejprve dlouze podrž prst na prvním souboru, pak můžeš klepat na další.</Text></View></View><Pressable disabled={pending} onPress={() => void readFile()} style={({ pressed }) => [styles.action, { backgroundColor: colors.primary, opacity: pending || pressed ? 0.65 : 1 }]}><MaterialIcons name="upload-file" size={19} color="#141317" /><Text style={styles.actionText}>{createDocument.isPending || importDocx.isPending ? "Importuji soubory…" : "Vybrat textové soubory"}</Text></Pressable>
+      <View style={[styles.importCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={[styles.cardIcon, { backgroundColor: `${colors.primary}1A` }]}><MaterialIcons name="description" size={22} color={colors.primary} /></View><View style={styles.cardCopy}><Text style={[styles.cardTitle, { color: colors.foreground }]}>Soubory z telefonu nebo webu</Text><Text style={[styles.cardText, { color: colors.muted }]}>TXT, Markdown, HTML, CSV, DOCX i PDF. Můžeš vybrat více souborů najednou.</Text><Text style={[styles.hint, { color: colors.primary }]}>💡 V dialogu nejprve dlouze podrž prst na prvním souboru, pak můžeš klepat na další.</Text></View></View><Pressable disabled={pending} onPress={() => void readFile()} style={({ pressed }) => [styles.action, { backgroundColor: colors.primary, opacity: pending || pressed ? 0.65 : 1 }]}><MaterialIcons name="upload-file" size={19} color="#141317" /><Text style={styles.actionText}>{createDocument.isPending || importDocx.isPending ? "Importuji soubory…" : "Vybrat textové soubory"}</Text></Pressable>
       <View style={styles.divider}><View style={[styles.line, { backgroundColor: colors.border }]} /><Text style={[styles.or, { color: colors.muted }]}>nebo</Text><View style={[styles.line, { backgroundColor: colors.border }]} /></View>
       <View style={[styles.importCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={[styles.cardIcon, { backgroundColor: `${colors.primary}1A` }]}><MaterialIcons name="article" size={22} color={colors.primary} /></View><View style={styles.cardCopy}><Text style={[styles.cardTitle, { color: colors.foreground }]}>Google Dokumenty přes odkaz</Text><Text style={[styles.cardText, { color: colors.muted }]}>V Drive u dokumentu zvol Sdílet → Kopírovat odkaz („pro každého s odkazem“). Názvy se načtou automaticky.</Text></View></View><TextInput value={googleLinks} onChangeText={setGoogleLinks} autoCapitalize="none" autoCorrect={false} multiline textAlignVertical="top" placeholder={"https://docs.google.com/document/d/…\nhttps://docs.google.com/document/d/…"} placeholderTextColor={colors.muted} style={[styles.input, styles.linksInput, { color: colors.foreground, backgroundColor: colors.surface, borderColor: colors.border }]} /><Pressable disabled={pending} onPress={() => void importGoogle()} style={({ pressed }) => [styles.outlineAction, { borderColor: colors.primary, opacity: pending || pressed ? 0.65 : 1 }]}><MaterialIcons name="cloud-download" size={19} color={colors.primary} /><Text style={[styles.outlineText, { color: colors.primary }]}>{importGoogleDocument.isPending ? "Načítám dokumenty…" : "Importovat Google Dokumenty"}</Text></Pressable>
     </View></View></Modal></>;
