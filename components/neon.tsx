@@ -10,7 +10,7 @@ export function NeonGradient({ children, style }: { children?: ReactNode; style?
   return (
     <View style={[styles.wrap, style]}>
       <LinearGradient
-        colors={["#FF2E88", "#7C3AED", "#00D4FF"]}
+        colors={["#2E7CFF", "#00C2FF", "#7C4DFF"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
@@ -24,7 +24,7 @@ export function NeonGradient({ children, style }: { children?: ReactNode; style?
 export function NeonAccent({ width = 64 }: { width?: number }) {
   return (
     <LinearGradient
-      colors={["#FF2E88", "#FFC53D", "#00E68A"]}
+      colors={["#2E7CFF", "#FFC53D", "#00E68A"]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 0 }}
       style={{ height: 4, borderRadius: 2, width }}
@@ -38,7 +38,7 @@ export function GlowCard({ children, style, contentStyle }: { children?: ReactNo
   return (
     <View style={style}>
       <LinearGradient
-        colors={[colors.primary, "#7C3AED"]}
+        colors={[colors.primary, "#00C2FF"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.glowBorder}

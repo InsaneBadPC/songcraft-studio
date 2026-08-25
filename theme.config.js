@@ -1,6 +1,6 @@
 /** @type {const} */
 const themeColors = {
-  primary: { light: '#FF2E88', dark: '#FF2E88' },
+  primary: { light: '#2E7CFF', dark: '#2E7CFF' },
   background: { light: '#07070C', dark: '#07070C' },
   surface: { light: '#12121B', dark: '#12121B' },
   foreground: { light: '#F5F3FA', dark: '#F5F3FA' },

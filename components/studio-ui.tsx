@@ -18,7 +18,7 @@ export function StudioHeader({ eyebrow, title, action }: { eyebrow?: string; tit
   return (
     <View style={styles.header}>
       <LinearGradient
-        colors={[`${colors.primary}26`, "#7C3AED1F", "transparent"]}
+        colors={[`${colors.primary}26`, "#00C2FF1F", "transparent"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0.6 }}
         style={styles.headerGlow}
