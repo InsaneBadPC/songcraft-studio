@@ -57,18 +57,36 @@ Deno.serve(async (request) => {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return json({ error: "Neplatné přihlášení." }, 401);
 
-  const input = await request.json().catch(() => null) as { action?: "create" | "check"; entityType?: "song" | "lyric"; entityId?: string; jobId?: string; format?: "youtube_16_9"; userNote?: string | null } | null;
+  const input = await request.json().catch(() => null) as { action?: "create" | "check"; entityType?: "song" | "lyric" | "album"; entityId?: string; jobId?: string; format?: "youtube_16_9"; userNote?: string | null } | null;
   if (!input?.action || !input.entityType || !input.entityId) return json({ error: "Chybí skladba nebo akce." }, 400);
-  const table = input.entityType === "song" ? "sc_songs" : "sc_lyrics";
-  const { data: entity, error: entityError } = await supabase.from(table).select("id,title,style_prompt,lyrics,album_id").eq("id", input.entityId).eq("user_id", user.id).single();
+  const isAlbum = input.entityType === "album";
+  const table = input.entityType === "song" ? "sc_songs" : input.entityType === "album" ? "sc_albums" : "sc_lyrics";
+  const { data: entity, error: entityError } = await supabase.from(table).select(isAlbum ? "id,name,title:description,cover_path" : "id,title,style_prompt,lyrics,album_id").eq("id", input.entityId).eq("user_id", user.id).single();
   if (entityError || !entity) return json({ error: "Položka nebyla nalezena." }, 404);
-  const { data: album } = entity.album_id ? await supabase.from("sc_albums").select("name").eq("id", entity.album_id).eq("user_id", user.id).maybeSingle() : { data: null };
-  const albumName = album?.name || "Bez alba";
+  let entityTitle: string;
+  let stylePrompt: string | null = null;
+  let lyrics: string | null = null;
+  let albumName: string;
+  if (isAlbum) {
+    entityTitle = truncate((entity as any).name ?? (entity as any).title, 150) || "Album";
+    stylePrompt = truncate((entity as any).title ?? "", 600) || null; // u alba nese description kreativní zadání
+    lyrics = null;
+    albumName = entityTitle;
+  } else {
+    entityTitle = truncate(entity.title, 150);
+    stylePrompt = truncate(entity.style_prompt, 600);
+    lyrics = entity.lyrics;
+    const { data: album } = (entity as any).album_id ? await supabase.from("sc_albums").select("name").eq("id", (entity as any).album_id).eq("user_id", user.id).maybeSingle() : { data: null };
+    albumName = album?.name || "Bez alba";
+  }
   const youtubeCover = input.format === "youtube_16_9";
 
   if (input.action === "create") {
-    const formatInstruction = youtubeCover ? "Create a cinematic square music visual with a strong centered subject; the app will turn it into a wide 16:9 YouTube cover and add a title." : "Create a square album cover.";
-    const prompt = `${formatInstruction} Czech song by Temney. Song title: "${truncate(entity.title, 120)}". Album: "${truncate(albumName, 120)}". Mood and music direction: ${truncate(entity.style_prompt, 600) || "original Czech song"}. Lyrical atmosphere: ${truncate(entity.lyrics, 1200)}. Optional creative direction: ${truncate(input.userNote, 600) || "none"}. Premium expressive artwork, one clear visual subject, rich texture, no lettering, no words, no logos, no watermark.`;
+    const formatInstruction = youtubeCover ? "Create a cinematic square music visual with a strong centered subject; the app will turn it into a wide 16:9 YouTube cover and add a title." : isAlbum ? "Create a square music album cover with strong artistic identity for the release." : "Create a square album cover.";
+    const subjectLine = isAlbum
+      ? `Czech music album by Temney. Album title: "${entityTitle}". Creative direction: ${truncate(stylePrompt, 600) || "instrumental collection without lyrics"}. Optional creative direction: ${truncate(input.userNote, 600) || "none"}.`
+      : `Czech song by Temney. Song title: "${entityTitle}". Album: "${truncate(albumName, 120)}". Mood and music direction: ${truncate(stylePrompt, 600) || "original Czech song"}. Lyrical atmosphere: ${truncate(lyrics, 1200)}. Optional creative direction: ${truncate(input.userNote, 600) || "none"}.`;
+    const prompt = `${formatInstruction} ${subjectLine} Premium expressive artwork, one clear visual subject, rich texture, no lettering, no words, no logos, no watermark.`;
     const response = await fetch("https://aihorde.net/api/v2/generate/async", { method: "POST", headers: { "Content-Type": "application/json", apikey: "0000000000", "Client-Agent": "SongCraftStudio:1.1" }, body: JSON.stringify({ prompt, params: { width: youtubeCover ? 512 : 512, height: youtubeCover ? 512 : 512, steps: 16, cfg_scale: 6.5, n: 1 }, nsfw: false, censor_nsfw: true, trusted_workers: false, shared: false, r2: true }) });
     const data = await response.json().catch(() => null) as { id?: string; message?: string } | null;
     if (!response.ok || !data?.id) return json({ error: data?.message || "Bezplatná AI nyní nemůže přijmout generování." }, 502);
@@ -86,10 +104,10 @@ Deno.serve(async (request) => {
     if (!source) return json({ status: "failed", error: "Bezplatná AI nevrátila obrázek." });
     try {
       const generated = await readGeneratedImage(source);
-      const output = youtubeCover ? renderYoutubeCover(generated, albumName, entity.title) : generated.bytes;
+      const output = youtubeCover ? renderYoutubeCover(generated, isAlbum ? "Album" : albumName, entityTitle) : generated.bytes;
       const contentType = youtubeCover ? "image/jpeg" : generated.mime;
       const extension = youtubeCover ? "jpg" : contentType.includes("png") ? "png" : contentType.includes("jpeg") ? "jpg" : "webp";
-      const path = `${user.id}/covers/generated/${input.entityType}-${safe(entity.title)}-${crypto.randomUUID()}.${extension}`;
+      const path = `${user.id}/covers/generated/${input.entityType}-${safe(entityTitle)}-${crypto.randomUUID()}.${extension}`;
       const { error: uploadError } = await supabase.storage.from("songcraft").upload(path, output, { contentType, upsert: false });
       if (uploadError) return json({ status: "failed", error: uploadError.message });
       const { error: updateError } = await supabase.from(table).update({ cover_path: path }).eq("id", input.entityId).eq("user_id", user.id);

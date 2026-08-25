@@ -16,6 +16,7 @@ export default function SettingsScreen() {
   const snapshot = trpc.studio.snapshot.useQuery(undefined, { enabled: isAuthenticated });
   const authLogout = trpc.auth.logout.useMutation();
   const exportWholeLibrary = trpc.studio.exportWholeLibrary.useMutation();
+  const exportLyricsTxt = trpc.studio.exportLyricsTxt.useMutation();
   const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   if (loading || (isAuthenticated && snapshot.isLoading)) return <ScreenContainer><LoadingState /></ScreenContainer>;

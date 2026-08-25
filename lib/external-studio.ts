@@ -189,6 +189,10 @@ export async function exportExternalLibrary(albumId?: string) {
   return callExternalUtility<{ url: string; fileName: string; byteSize: number }>({ action: "export_library", ...(albumId ? { albumId } : {}) });
 }
 
+export async function exportExternalLyricsTxt() {
+  return callExternalUtility<{ url: string; fileName: string; byteSize: number }>({ action: "export_lyrics_txt" });
+}
+
 export async function exportExternalTaggedCopy(versionId: string) {
   const { data, error } = await supabase.from("sc_audio_versions").select("id, label, id3_comment").eq("id", versionId).single();
   const version = assert(data, error);
@@ -201,14 +205,14 @@ export type ExternalCoverGeneration =
   | { status: "completed"; coverPath: string }
   | { status: "failed"; error: string };
 
-export async function createExternalCoverGeneration(entityType: "song" | "lyric", entityId: string, options?: { format?: "youtube_16_9"; userNote?: string | null }) {
+export async function createExternalCoverGeneration(entityType: "song" | "lyric" | "album", entityId: string, options?: { format?: "youtube_16_9"; userNote?: string | null }) {
   const { data, error } = await supabase.functions.invoke("songcraft-cover-ai", { body: { action: "create", entityType, entityId, ...options } });
   const result = assert(data, error) as { jobId?: string; message?: string; error?: string };
   if (!result.jobId) throw new Error(result.error ?? "Cloudová AI nyní nemůže generování přijmout.");
   return result as { jobId: string; message?: string };
 }
 
-export async function checkExternalCoverGeneration(entityType: "song" | "lyric", entityId: string, jobId: string, options?: { format?: "youtube_16_9" }) {
+export async function checkExternalCoverGeneration(entityType: "song" | "lyric" | "album", entityId: string, jobId: string, options?: { format?: "youtube_16_9" }) {
   const { data, error } = await supabase.functions.invoke("songcraft-cover-ai", { body: { action: "check", entityType, entityId, jobId, ...options } });
   return assert(data, error) as ExternalCoverGeneration;
 }

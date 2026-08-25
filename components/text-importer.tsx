@@ -27,23 +27,51 @@ export function TextImporter() {
     if (result.canceled) return;
     try {
       const createdIds: string[] = [];
+      const skipped: string[] = [];
       for (const asset of result.assets) {
+        // Živé Google Dokumenty z Drive nemají fyzický obsah — nelze je číst přímo.
+        if (/^application\/vnd\.google-apps\./i.test(asset.mimeType ?? "")) {
+          skipped.push(asset.name);
+          continue;
+        }
         if (/\.docx$/i.test(asset.name)) {
           const base64 = await assetToBase64(asset.uri, asset.base64);
           createdIds.push(await importDocx.mutateAsync({ fileName: asset.name, base64 }));
           continue;
         }
-        if (!/\.(txt|md|markdown|html?|csv)$/i.test(asset.name)) throw new Error(`Soubor „${asset.name}“ není TXT, Markdown, HTML, CSV ani DOCX.`);
+        if (!/\.(txt|md|markdown|html?|csv)$/i.test(asset.name)) {
+          // Soubor bez známé přípony: zkusíme přečíst jako text (někdy Drive dodá HTML nebo TXT kopii).
+          try {
+            const raw = Platform.OS === "web" ? await fetch(asset.uri).then((response) => response.text()) : await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 });
+            if (/[\u0100-\uFFFF]/.test(raw.slice(0, 4000)) || /<html|<!doctype/i.test(raw.slice(0, 200))) {
+              const imported = splitImportedSongContent(cleanImportedText(raw, asset.name));
+              if (imported.lyrics.trim()) {
+                const title = asset.name.replace(/\.[^.]+$/, "") || "Importovaný text";
+                createdIds.push(await createDocument.mutateAsync({ title, albumId: null, stylePrompt: imported.stylePrompt, lyrics: imported.lyrics, notes: `Importováno ze souboru ${asset.name}`, coverStorageKey: null, coverUrl: null }));
+                continue;
+              }
+            }
+          } catch {}
+          skipped.push(asset.name);
+          continue;
+        }
         const raw = Platform.OS === "web" ? await fetch(asset.uri).then((response) => response.text()) : await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 });
         const imported = splitImportedSongContent(cleanImportedText(raw, asset.name));
         if (!imported.lyrics) throw new Error(`Soubor „${asset.name}“ je prázdný.`);
         const title = asset.name.replace(/\.[^.]+$/, "") || "Importovaný text";
         createdIds.push(await createDocument.mutateAsync({ title, albumId: null, stylePrompt: imported.stylePrompt, lyrics: imported.lyrics, notes: `Importováno ze souboru ${asset.name}`, coverStorageKey: null, coverUrl: null }));
       }
-      if (!createdIds.length) return;
+      if (!createdIds.length) {
+        Alert.alert(
+          "Tyto soubory se importovat nepodařilo",
+          `${skipped.map((name) => `• ${name}`).join("\n")}\n\nJsou to pravděpodobně živé Google Dokumenty z Disku — ty nemají stahovatelný obsah. Dvě možnosti:\n1) V Drive si je stáhni jako DOCX (Otevřít → Stáhnout) a importuj znovu.\n2) Použij dole „Importovat Google Dokument“ přes odkaz.`,
+        );
+        return;
+      }
       await utils.studio.snapshot.invalidate();
       setVisible(false);
-      if (createdIds.length === 1) router.push(`/text/${createdIds[0]}` as never);
+      if (skipped.length) Alert.alert("Import částečně dokončen", `Vytvořeno ${createdIds.length} textů. ${skipped.length} souborů se nepodařilo načíst (živé Google Dokumenty — stáhni je jako DOCX nebo použij import přes odkaz).`);
+      else if (createdIds.length === 1) router.push(`/text/${createdIds[0]}` as never);
       else Alert.alert("Import dokončen", `Bylo vytvořeno ${createdIds.length} nových textů. Najdeš je v katalogu Texty.`);
     } catch (error) { Alert.alert("Import se nezdařil", error instanceof Error ? error.message : "Zkus jiný soubor."); }
   };
