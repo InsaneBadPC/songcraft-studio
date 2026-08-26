@@ -17,12 +17,6 @@ export const StudioHeader = memo(function StudioHeader({ eyebrow, title, action 
   const colors = useColors();
   return (
     <View style={styles.header}>
-      <LinearGradient
-        colors={[`${colors.primary}26`, "#00C2FF1F", "transparent"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0.6 }}
-        style={styles.headerGlow}
-      />
       <View style={styles.headerCopy}>
         {eyebrow ? (
           <Text style={[styles.eyebrow, { color: colors.primary }]}>{eyebrow.toUpperCase()}</Text>
@@ -102,8 +96,7 @@ export function formatFileSize(bytes: number) {
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 22, position: "relative", borderRadius: 20, padding: 16 },
-  headerGlow: { borderRadius: 20 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 22 },
   headerCopy: { flex: 1, gap: 4 },
   eyebrow: { fontSize: 11, lineHeight: 15, fontWeight: "800", letterSpacing: 1.2 },
   title: { fontSize: 29, lineHeight: 35, fontWeight: "800", letterSpacing: -0.6 },
