@@ -121,7 +121,7 @@ Deno.serve(async (request) => {
       headers: { Authorization: `Bearer ${githubToken}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
       body: JSON.stringify({
         event_type: "compose-cover",
-        client_payload: { jobId: input.jobId, entityType: input.entityType, entityId: input.entityId, title: entityTitle, albumName, rawPath },
+        client_payload: { jobId: input.jobId, userId: user.id, entityType: input.entityType, entityId: input.entityId, title: entityTitle, albumName, rawPath },
       }),
     });
     if (!dispatch.ok && dispatch.status !== 204) {

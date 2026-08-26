@@ -23,6 +23,7 @@ jobs:
           SONGCRAFT_SUPABASE_URL: "https://hfykngbhcxmnpxvjagoj.supabase.co"
           SONGCRAFT_SERVICE_ROLE_KEY: ${{ secrets.SONGCRAFT_SERVICE_ROLE_KEY }}
           JOB_ID: ${{ github.event.client_payload.jobId }}
+          USER_ID: ${{ github.event.client_payload.userId }}
           ENTITY_TYPE: ${{ github.event.client_payload.entityType }}
           ENTITY_ID: ${{ github.event.client_payload.entityId }}
           TITLE: ${{ github.event.client_payload.title }}
