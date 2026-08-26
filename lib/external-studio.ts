@@ -344,8 +344,8 @@ export async function deleteExternalStylePrompt(id: string) {
 
 export type AiRhymes = { exact: string[]; multiword: string[]; assonance: string[] };
 
-export async function fetchExternalAiRhymes(word: string): Promise<AiRhymes> {
-  const { data, error } = await supabase.functions.invoke("songcraft-rhymes", { body: { word } });
+export async function fetchExternalAiRhymes(word: string, exclude?: string[]): Promise<AiRhymes> {
+  const { data, error } = await supabase.functions.invoke("songcraft-rhymes", { body: { word, ...(exclude?.length ? { exclude } : {}) } });
   return assert(data, error) as AiRhymes;
 }
 

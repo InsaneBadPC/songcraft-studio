@@ -18,9 +18,10 @@ Deno.serve(async (request) => {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return json({ error: "Neplatné přihlášení." }, 401);
 
-  const input = await request.json().catch(() => null) as { word?: string } | null;
+  const input = await request.json().catch(() => null) as { word?: string; exclude?: unknown } | null;
   const word = clean(input?.word);
   if (!word || word.length < 2) return json({ error: "Zadej hledané slovo." }, 400);
+  const exclude = Array.isArray(input.exclude) ? input.exclude.map(clean).filter(Boolean).slice(0, 60) : [];
   const endingMatch = /[aáeéěiíoóuúůyý][^aáeéěiíoóuúůyý]*$/i.exec(word);
   const ending = endingMatch ? endingMatch[0] : word.slice(-2);
   const lastVowelMatch = /[aáeéěiíoóuúůyý]/i.exec(ending);
@@ -38,17 +39,20 @@ Deno.serve(async (request) => {
     "multiword — SKUPINOVÉ rýmy: spojení (předložka/zájmeno + slovo), jehož poslední slovo končí zvukově na „" + ending + "“. Vzor: pro „smůlu“ → do důlu, u stolu, na půlu.",
     "assonance — téměř rýma: shodná koncová samohláska „" + lastVowel + "“, podobné souhlásky. Vzor: pro „smůlu“ → bulu, muru.",
     "",
-    "KONTROLA PŘED ODESLÁNÍM: přečti si každý návrh nahlas po hláskách od konce. Nezní-li jeho konec stejně jako konec slova „" + word + "“, SMAŽ ho. Toto pravidlo má nejvyšší prioritu.",
+    "MÁLO RÝMŮ? TO JE V POŘÁDKU: pro některé tvary existuje jen pár skutečných rýmů (např. ke „smůlu“ reálně patří hlavně nulu, školu, dolu). Vrať jen to, co opravdu existuje — kratší pravdivý seznam porazí dlouhý seznam s nesmysly.",
+    "POUZE SKUTEČNÁ ČESKÁ SLOVA: každý návrh musí být reálné existující české slovo nebo běžná hovorová podoba. Přísně ZAKÁZÁNO vymýšlet si slova, zkracovat je uměle nebo měnit jejich koncovku jen kvůli rýmu.",
+    "Tato rýmy už uživatel viděl a PŘESNĚ JE MUSÍŠ VYNECHAT, hledej pouze JINÉ: " + (exclude.length ? exclude.join(", ") : "(první kolo — nic nevynechávej)") + ".",
+    "KONTROLA PŘED ODESLÁNÍM: 1) Je každý návrh skutečné české slovo? 2) Přečti si každý návrh nahlas po hláskách od konce. Nezní-li jeho konec stejně jako konec slova „" + word + "“, SMAŽ ho. Toto pravidlo má nejvyšší prioritu.",
     "Vrať POUZE JSON ve tvaru {\"exact\":[\"…\"],\"multiword\":[\"…\"],\"assonance\":[\"…\"]} — exact max 12, multiword max 12, assonance max 8 položek, bez vysvětlení.",
   ].join("\n");
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${encodeURIComponent(geminiKey)}`, {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${encodeURIComponent(geminiKey)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: instruction }] },
       contents: [{ role: "user", parts: [{ text: `Rýmy ke slovu: ${word}` }] }],
-      generationConfig: { temperature: 0.8, maxOutputTokens: 800 },
+      generationConfig: { temperature: 0.8, maxOutputTokens: 4000, thinkingConfig: { thinkingLevel: "low" } },
     }),
   });
   if (!response.ok) return json({ error: "AI teď odmítla požadavek. Zkus to za chvíli." }, response.status === 429 ? 429 : 502);
