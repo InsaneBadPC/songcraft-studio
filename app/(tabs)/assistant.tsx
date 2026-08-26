@@ -1,6 +1,7 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import * as Clipboard from "expo-clipboard";
 import { useMemo, useState } from "react";
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { EmptyState, StudioHeader } from "@/components/studio-ui";
 import { ScreenContainer } from "@/components/screen-container";
@@ -66,6 +67,13 @@ export default function AssistantScreen() {
     }
   }
 
+  async function copyMessage(content: string) {
+    try {
+      await Clipboard.setStringAsync(content);
+      Alert.alert("Zkopírováno", "Odpověď je ve schránce — můžeš ji vložit do promptu nebo textu.");
+    } catch {}
+  }
+
   if (loading) return <ScreenContainer />;
   if (!isAuthenticated) return <ScreenContainer className="p-5 justify-center"><EmptyState icon="lock" title="Přihlášení je potřeba" text="Asistent pracuje jen s tvými soukromými materiály." action={<Pressable onPress={() => void startPrivateLogin()} style={[styles.login, { backgroundColor: colors.primary }]}><Text style={styles.loginText}>Přihlásit se</Text></Pressable>} /></ScreenContainer>;
 
@@ -78,7 +86,7 @@ export default function AssistantScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
           ListHeaderComponent={listHeader}
-          renderItem={({ item }) => <View style={[styles.message, item.role === "user" ? [styles.userMessage, { backgroundColor: colors.primary }] : [styles.assistantMessage, { backgroundColor: colors.surface, borderColor: colors.border }]]}><Text style={[styles.messageRole, { color: item.role === "user" ? "#141317" : colors.primary }]}>{item.role === "user" ? "Ty" : "Studio asistent"}</Text><Text style={[styles.messageText, { color: item.role === "user" ? "#141317" : colors.foreground }]}>{item.content}</Text></View>}
+          renderItem={({ item }) => <View style={[styles.message, item.role === "user" ? [styles.userMessage, { backgroundColor: colors.primary }] : [styles.assistantMessage, { backgroundColor: colors.surface, borderColor: colors.border }]]}><View style={styles.messageHead}><Text style={[styles.messageRole, { color: item.role === "user" ? "#141317" : colors.primary }]}>{item.role === "user" ? "Ty" : "Studio asistent"}</Text>{item.role === "assistant" ? <Pressable onPress={() => void copyMessage(item.content)} hitSlop={8} style={({ pressed }) => [styles.copyChip, { opacity: pressed ? 0.6 : 1 }]}><MaterialIcons name="content-copy" size={14} color={colors.muted} /><Text style={[styles.copyChipText, { color: colors.muted }]}>Kopírovat</Text></Pressable> : null}</View><Text selectable style={[styles.messageText, { color: item.role === "user" ? "#141317" : colors.foreground }]}>{item.content}</Text></View>}
           ListFooterComponent={sending ? <View style={[styles.thinking, { backgroundColor: colors.surface, borderColor: colors.border }]}><MaterialIcons name="more-horiz" size={22} color={colors.primary} /><Text style={[styles.thinkingText, { color: colors.muted }]}>Asistent prochází tvé materiály…</Text></View> : null}
         />
         {error ? <Text style={[styles.error, { color: colors.error }]}>{error}</Text> : null}
@@ -91,4 +99,4 @@ export default function AssistantScreen() {
   );
 }
 
-const styles = StyleSheet.create({ grow: { flex: 1 }, content: { paddingTop: 14, paddingBottom: 14, gap: 10 }, notice: { flexDirection: "row", gap: 10, borderRadius: 16, borderWidth: 1, padding: 13, marginBottom: 18 }, noticeText: { flex: 1, fontSize: 12, lineHeight: 17 }, suggestions: { gap: 9 }, suggestionTitle: { fontSize: 14, fontWeight: "800", marginBottom: 2 }, suggestion: { minHeight: 52, borderRadius: 16, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 11, flexDirection: "row", alignItems: "center", gap: 10 }, suggestionText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: "700" }, disclaimer: { fontSize: 11, lineHeight: 16, marginTop: 7 }, message: { maxWidth: "88%", borderRadius: 18, padding: 13, gap: 5 }, userMessage: { alignSelf: "flex-end", borderBottomRightRadius: 5 }, assistantMessage: { alignSelf: "flex-start", borderWidth: 1, borderBottomLeftRadius: 5 }, messageRole: { fontSize: 11, fontWeight: "800" }, messageText: { fontSize: 14, lineHeight: 20 }, thinking: { alignSelf: "flex-start", flexDirection: "row", gap: 8, alignItems: "center", borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 9 }, thinkingText: { fontSize: 12, fontWeight: "700" }, composer: { flexDirection: "row", alignItems: "flex-end", gap: 8, borderWidth: 1, borderRadius: 18, padding: 8, marginBottom: 12 }, input: { flex: 1, minHeight: 42, maxHeight: 104, paddingHorizontal: 8, paddingVertical: 9, fontSize: 14, lineHeight: 19 }, send: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" }, error: { fontSize: 12, lineHeight: 16, marginHorizontal: 4, marginBottom: 7 }, login: { minHeight: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" }, loginText: { color: "#141317", fontWeight: "800" } });
+const styles = StyleSheet.create({ grow: { flex: 1 }, content: { paddingTop: 14, paddingBottom: 14, gap: 10 }, notice: { flexDirection: "row", gap: 10, borderRadius: 16, borderWidth: 1, padding: 13, marginBottom: 18 }, noticeText: { flex: 1, fontSize: 12, lineHeight: 17 }, suggestions: { gap: 9 }, suggestionTitle: { fontSize: 14, fontWeight: "800", marginBottom: 2 }, suggestion: { minHeight: 52, borderRadius: 16, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 11, flexDirection: "row", alignItems: "center", gap: 10 }, suggestionText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: "700" }, disclaimer: { fontSize: 11, lineHeight: 16, marginTop: 7 }, message: { maxWidth: "88%", borderRadius: 18, padding: 13, gap: 5 }, messageHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }, copyChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, height: 24, borderRadius: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.14)" }, copyChipText: { fontSize: 10.5, fontWeight: "800" }, userMessage: { alignSelf: "flex-end", borderBottomRightRadius: 5 }, assistantMessage: { alignSelf: "flex-start", borderWidth: 1, borderBottomLeftRadius: 5 }, messageRole: { fontSize: 11, fontWeight: "800" }, messageText: { fontSize: 14, lineHeight: 20 }, thinking: { alignSelf: "flex-start", flexDirection: "row", gap: 8, alignItems: "center", borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 9 }, thinkingText: { fontSize: 12, fontWeight: "700" }, composer: { flexDirection: "row", alignItems: "flex-end", gap: 8, borderWidth: 1, borderRadius: 18, padding: 8, marginBottom: 12 }, input: { flex: 1, minHeight: 42, maxHeight: 104, paddingHorizontal: 8, paddingVertical: 9, fontSize: 14, lineHeight: 19 }, send: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" }, error: { fontSize: 12, lineHeight: 16, marginHorizontal: 4, marginBottom: 7 }, login: { minHeight: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" }, loginText: { color: "#141317", fontWeight: "800" } });

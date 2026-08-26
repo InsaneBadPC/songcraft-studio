@@ -1,0 +1,31 @@
+name: Compose 16:9 cover
+
+on:
+  repository_dispatch:
+    types: [compose-cover]
+
+permissions:
+  contents: read
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Compose Full HD-wide cover and upload to SongCraft storage
+        env:
+          SONGCRAFT_SUPABASE_URL: "https://hfykngbhcxmnpxvjagoj.supabase.co"
+          SONGCRAFT_SERVICE_ROLE_KEY: ${{ secrets.SONGCRAFT_SERVICE_ROLE_KEY }}
+          JOB_ID: ${{ github.event.client_payload.jobId }}
+          ENTITY_TYPE: ${{ github.event.client_payload.entityType }}
+          ENTITY_ID: ${{ github.event.client_payload.entityId }}
+          TITLE: ${{ github.event.client_payload.title }}
+          ALBUM_NAME: ${{ github.event.client_payload.albumName }}
+          RAW_PATH: ${{ github.event.client_payload.rawPath }}
+        run: node scripts/render/compose-cover.mjs
