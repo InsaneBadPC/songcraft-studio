@@ -342,6 +342,13 @@ export async function deleteExternalStylePrompt(id: string) {
   if (error) throw new Error(error.message);
 }
 
+export type AiRhymes = { exact: string[]; multiword: string[]; assonance: string[] };
+
+export async function fetchExternalAiRhymes(word: string): Promise<AiRhymes> {
+  const { data, error } = await supabase.functions.invoke("songcraft-rhymes", { body: { word } });
+  return assert(data, error) as AiRhymes;
+}
+
 export type YoutubeCopyAction = "description" | "tags";
 
 export async function generateExternalYoutubeText(action: YoutubeCopyAction, songId: string) {
