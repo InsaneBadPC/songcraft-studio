@@ -21,17 +21,25 @@ Deno.serve(async (request) => {
   const input = await request.json().catch(() => null) as { word?: string } | null;
   const word = clean(input?.word);
   if (!word || word.length < 2) return json({ error: "Zadej hledané slovo." }, 400);
+  const endingMatch = /[aáeéěiíoóuúůyý][^aáeéěiíoóuúůyý]*$/i.exec(word);
+  const ending = endingMatch ? endingMatch[0] : word.slice(-2);
+  const lastVowelMatch = /[aáeéěiíoóuúůyý]/i.exec(ending);
+  const lastVowel = lastVowelMatch ? lastVowelMatch[0].toLowerCase() : "";
 
   const instruction = [
-    "Jsi mistr českého rytmování a textařský poradce. Znalostně ovládáš českou fonetiku, morfologii, přízvuk na první slabiku a hovorovou češtinu.",
-    `Uživatel hledá rýmy ke slovu ve tvaru: „${word}".`,
-    "Pracuj se zvukovou podobou KONCOVKY od posledního přízvučné samohlásky (např. „smůlu“ → [ůlu]; „nocí“ → [ocí]).",
+    "Jsi mistr českého rytmování — textař s dokonalou znalostí české fonetiky a morfologie.",
+    "Uživatel hledá rýmy ke slovu ve tvaru: „" + word + "“.",
+    "KRITICKÉ PRAVIDLO: rýma se řídí zvukem od poslední přízvučné samohlásky do konce slova. Zadané slovo končí zvukem „" + ending + "“ (poslední samohláska je „" + lastVowel + "“).",
+    "ABSOLUTNÍ ZÁKAZ: žádný návrh nesmí končit jinou samohláskou než „" + lastVowel + "“. Návrh s jinou koncovou hláskou než konec slova „" + word + "“ je NEPLATNÝ a musí být vypuštěn.",
+    "Dlouhá a krátká verze téže samohlásky (u/ů/ú, i/í, e/é) se uznávají jako shodné.",
+    "",
     "Vrať tři skupiny:",
-    "exact — jednoslovná přesná rýma (stejná koncovka od přízvuku, např. smůlu → důlu, vůli, školu, polu, tůni…)",
-    "multiword — SKUPINOVÉ rýmy: dvouslovná či delší spojení, jejichž KONEC zní stejně (např. smůlu → „u kola“, „se školou“, „do dolu“, „na hůlu“, „v tom bolu“). Buď kreativní, použij předložky, zájmena, spřežky.",
-    "assonance — zvukově podobné nedokonalé rýmy (podobná samohláska nebo souhláska, např. smůlu → bulu, hulem, kultem…)",
-    "Pravidla: pouze reálná čeština (i hovorová), žádná vysvětlení, žádná poznámka.",
-    'Vrať POUZE JSON ve tvaru {"exact":["…"],"multiword":["…"],"assonance":["…"]} — exact a assonance max 10 položek, multiword max 12.',
+    "exact — jednoslovná přesná rýma končící zvukově na „" + ending + "“. Vzor kvality: pro „smůlu“ jsou nejlepší rýmy nulu, školu, dolu, polu.",
+    "multiword — SKUPINOVÉ rýmy: spojení (předložka/zájmeno + slovo), jehož poslední slovo končí zvukově na „" + ending + "“. Vzor: pro „smůlu“ → do důlu, u stolu, na půlu.",
+    "assonance — téměř rýma: shodná koncová samohláska „" + lastVowel + "“, podobné souhlásky. Vzor: pro „smůlu“ → bulu, muru.",
+    "",
+    "KONTROLA PŘED ODESLÁNÍM: přečti si každý návrh nahlas po hláskách od konce. Nezní-li jeho konec stejně jako konec slova „" + word + "“, SMAŽ ho. Toto pravidlo má nejvyšší prioritu.",
+    "Vrať POUZE JSON ve tvaru {\"exact\":[\"…\"],\"multiword\":[\"…\"],\"assonance\":[\"…\"]} — exact max 12, multiword max 12, assonance max 8 položek, bez vysvětlení.",
   ].join("\n");
 
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${encodeURIComponent(geminiKey)}`, {
@@ -40,7 +48,7 @@ Deno.serve(async (request) => {
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: instruction }] },
       contents: [{ role: "user", parts: [{ text: `Rýmy ke slovu: ${word}` }] }],
-      generationConfig: { temperature: 0.85, maxOutputTokens: 700 },
+      generationConfig: { temperature: 0.8, maxOutputTokens: 800 },
     }),
   });
   if (!response.ok) return json({ error: "AI teď odmítla požadavek. Zkus to za chvíli." }, response.status === 429 ? 429 : 502);
@@ -53,9 +61,9 @@ Deno.serve(async (request) => {
     const parsed = JSON.parse(match[0]) as { exact?: unknown; multiword?: unknown; assonance?: unknown };
     const toArray = (value: unknown) => Array.isArray(value) ? value.map(clean) : [];
     return json({
-      exact: uniq(toArray(parsed.exact), 10),
+      exact: uniq(toArray(parsed.exact), 12),
       multiword: uniq(toArray(parsed.multiword), 12),
-      assonance: uniq(toArray(parsed.assonance), 10),
+      assonance: uniq(toArray(parsed.assonance), 8),
     });
   } catch {
     return json({ error: "AI nevrátila platný výsledek." }, 502);

@@ -29,7 +29,13 @@ export function RhymeFinder({ onInsert, variant = "inline" }: { onInsert: (word:
     const timer = setTimeout(async () => {
       try {
         const result = await fetchExternalAiRhymes(trimmed);
-        if (requestRef.current === requestId) { setAi(result); setAiError(null); }
+        // Tvrda kontrola: ryma musi koncit stejnou hlaskou jako hledane slovo.
+        const guard = (list: string[]) => {
+          const tail = trimmed.slice(-1).toLowerCase();
+          return [...new Set(list.map((entry) => entry.trim()).filter((entry) => entry.toLowerCase().slice(-1) === tail && entry.toLowerCase() !== trimmed))];
+        };
+        const safe = { exact: guard(result.exact), multiword: guard(result.multiword), assonance: guard(result.assonance) };
+        if (requestRef.current === requestId) { setAi(safe); setAiError(null); }
       } catch (error) {
         if (requestRef.current === requestId) { setAi(null); setAiError(error instanceof Error ? error.message : null); }
       } finally {
