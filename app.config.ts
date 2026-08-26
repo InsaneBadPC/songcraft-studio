@@ -119,6 +119,8 @@ const config: ExpoConfig = {
         android: {
           buildArchs: ["armeabi-v7a", "arm64-v8a"],
           minSdkVersion: 24,
+          // Klávesnice zmenší okno místo aby překrývala obsah — vidíš, co píšeš.
+          softwareKeyboardLayoutMode: "resize",
         },
       },
     ],
