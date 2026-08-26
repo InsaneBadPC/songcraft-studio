@@ -29,12 +29,18 @@ export function RhymeFinder({ onInsert, variant = "inline" }: { onInsert: (word:
     const timer = setTimeout(async () => {
       try {
         const result = await fetchExternalAiRhymes(trimmed);
-        // Tvrda kontrola: ryma musi koncit stejnou hlaskou jako hledane slovo.
-        const guard = (list: string[]) => {
-          const tail = trimmed.slice(-1).toLowerCase();
-          return [...new Set(list.map((entry) => entry.trim()).filter((entry) => entry.toLowerCase().slice(-1) === tail && entry.toLowerCase() !== trimmed))];
+        // Kontrola podle ZVUKU, ne pismen: u/ů/ú, i/í/y/ý, e/é/ě zní stejne.
+        const phonetic = (value: string) => value.toLowerCase().replace(/[úů]/g, "u").replace(/[íý]/g, "i").replace(/ě/g, "e").replace(/á/g, "a").replace(/é/g, "e").replace(/ó/g, "o");
+        const querySound = phonetic(trimmed);
+        const exactGuard = (list: string[]) => {
+          const tail = querySound.slice(-2);
+          return [...new Set(list.map((entry) => entry.trim()).filter((entry) => entry.toLowerCase() !== trimmed && phonetic(entry).slice(-2) === tail))];
         };
-        const safe = { exact: guard(result.exact), multiword: guard(result.multiword), assonance: guard(result.assonance) };
+        const looseGuard = (list: string[]) => {
+          const vowel = querySound.slice(-1);
+          return [...new Set(list.map((entry) => entry.trim()).filter((entry) => entry.toLowerCase() !== trimmed && phonetic(entry).slice(-1) === vowel))];
+        };
+        const safe = { exact: exactGuard(result.exact), multiword: exactGuard(result.multiword), assonance: looseGuard(result.assonance) };
         if (requestRef.current === requestId) { setAi(safe); setAiError(null); }
       } catch (error) {
         if (requestRef.current === requestId) { setAi(null); setAiError(error instanceof Error ? error.message : null); }
