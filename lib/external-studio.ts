@@ -44,6 +44,9 @@ export type StudioSong = {
   coverUrl: string | null;
   youtubeDescription: string | null;
   youtubeTags: string | null;
+  isPublished: boolean;
+  publishedAt: Date | null;
+  publishedVideoId: string | null;
   completedAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -101,7 +104,7 @@ const assert = <T>(data: T | null, error: { message: string } | null): T => {
 
 const albumFromRow = async (row: any): Promise<StudioAlbum> => ({ id: row.id, userId: row.user_id, name: row.name, description: row.description, releaseYear: row.release_year, coverStorageKey: row.cover_path, coverUrl: await signedUrl(row.cover_path), sortOrder: row.sort_order, createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
 const documentFromRow = async (row: any): Promise<StudioDocument> => ({ id: row.id, userId: row.user_id, albumId: row.album_id, title: row.title, stylePrompt: row.style_prompt, lyrics: row.lyrics, notes: row.notes, coverStorageKey: row.cover_path, coverUrl: await signedUrl(row.cover_path), status: row.status === "complete" ? "complete" : "draft", completedAt: mapTime(row.completed_at), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
-const songFromRow = async (row: any): Promise<StudioSong> => ({ id: row.id, userId: row.user_id, albumId: row.album_id, sourceDocumentId: row.source_lyric_id, title: row.title, stylePrompt: row.style_prompt, stylePrompts: songStylePrompts(row), lyrics: row.lyrics, notes: row.notes, coverStorageKey: row.cover_path, coverUrl: await signedUrl(row.cover_path), youtubeDescription: row.youtube_description ?? null, youtubeTags: row.youtube_tags ?? null, completedAt: new Date(row.completed_at), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
+const songFromRow = async (row: any): Promise<StudioSong> => ({ id: row.id, userId: row.user_id, albumId: row.album_id, sourceDocumentId: row.source_lyric_id, title: row.title, stylePrompt: row.style_prompt, stylePrompts: songStylePrompts(row), lyrics: row.lyrics, notes: row.notes, coverStorageKey: row.cover_path, coverUrl: await signedUrl(row.cover_path), youtubeDescription: row.youtube_description ?? null, youtubeTags: row.youtube_tags ?? null, isPublished: Boolean(row.is_published), publishedAt: mapTime(row.published_at), publishedVideoId: row.published_video_id ?? null, completedAt: new Date(row.completed_at), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
 const versionFromRow = async (row: any): Promise<StudioVersion> => {
   const storageUrl = await signedUrl(row.storage_path);
   const taggedStorageUrl = await signedUrl(row.tagged_storage_path);
@@ -267,7 +270,7 @@ export async function createExternalSong(input: { title: string; albumId?: strin
   return assert(data, error).id;
 }
 
-export async function updateExternalSong(input: { id: string; title?: string; albumId?: string | null; stylePrompt?: string | null; stylePrompts?: string[]; lyrics?: string | null; notes?: string | null; coverStorageKey?: string | null; youtubeDescription?: string | null; youtubeTags?: string | null }) {
+export async function updateExternalSong(input: { id: string; title?: string; albumId?: string | null; stylePrompt?: string | null; stylePrompts?: string[]; lyrics?: string | null; notes?: string | null; coverStorageKey?: string | null; youtubeDescription?: string | null; youtubeTags?: string | null; isPublished?: boolean; publishedVideoId?: string | null }) {
   const prompts = input.stylePrompts === undefined ? undefined : input.stylePrompts.map((entry) => entry.trim()).filter(Boolean);
   const { error } = await supabase.from("sc_songs").update({
     ...(input.title !== undefined ? { title: input.title } : {}),
@@ -278,6 +281,8 @@ export async function updateExternalSong(input: { id: string; title?: string; al
     ...(input.coverStorageKey !== undefined ? { cover_path: input.coverStorageKey } : {}),
     ...(input.youtubeDescription !== undefined ? { youtube_description: input.youtubeDescription } : {}),
     ...(input.youtubeTags !== undefined ? { youtube_tags: input.youtubeTags } : {}),
+    ...(input.isPublished !== undefined ? { is_published: input.isPublished, published_at: input.isPublished ? new Date().toISOString() : null } : {}),
+    ...(input.publishedVideoId !== undefined ? { published_video_id: input.publishedVideoId } : {}),
   }).eq("id", input.id);
   if (error) throw new Error(error.message);
 }
