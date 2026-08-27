@@ -45,16 +45,18 @@ Deno.serve(async (request) => {
 
   const instruction = input.action === "description"
     ? [
-        "Jsi copywriter pro hudební YouTube kanál interpreta Temney.",
-        "Na základě názvu, stylu a textu písně napiš poutavý český popis videa na YouTube (120–180 slov).",
-        "Struktura: 1) úvodní hook dvě věty s atmosférou skladby, 2) odstavec o tom, o čem píseň je a jaký má zvuk,",
-        "3) výzva posluchačům (odběr, sdílení, komentář), 4) na konec řádek „#Temney #<názevBezDiakritiky> #hudba“.",
-        "Nevymýšlej si fakta (datum, spolupracovníky, odkazy). Piš pouze výsledný popis, bez úvodu a bez komentářů.",
+        "Jsi Temney a píšeš popisek ke své vlastní skladbě na YouTube.",
+        "Podle názvu, stylu a hlavně podle textu písně napiš lidské, osobní shrnutí o čem skladba je (80–120 slov, česky).",
+        "Piš v první osobě, klidně a upřímně, bez marketingových frází, bez teleshoppingu a bez výzev typu 'dejte odběr/like/sdílejte/komentujte'.",
+        "Zaměř se na téma, příběh a pocit písně; zmíň náladu/zvuk jen stručně pokud vyplývá z materiálu.",
+        "Na konec přidej pouze jeden řádek s hashtagy ve tvaru „#Temney #<názevBezDiakritiky> #ceskahudba“.",
+        "Nevymýšlej si fakta (datum vydání, spolupracovníky, odkazy, statistiky). Piš pouze výsledný popis, bez úvodu a bez komentářů.",
       ].join("\n")
     : [
-        "Jsi specialista na YouTube metadata pro hudební kanál interpreta Temney.",
-        "Na základě názvu, stylu a textu písně navrhni 12–18 relevantních tagů (krátká slova nebo fráze).",
-        "Smíchej češtinu a angličtinu, zahrň žánr, náladu, interpret a název skladby.",
+        "Jsi specialista na YouTube tagy pro interpreta Temney.",
+        "Navrhni 14–18 tagů půl na půl: 50 % podle OBSAHU textu (téma, příběh, klíčová slova a emoce z lyriky) a 50 % podle STYLU hudby (žánr, nálada, zvuk, produkce ze style_prompt).",
+        "Obsahová půlka: konkrétní motivy z textu (např. iluze, samota, vymyšlený svět apod.). Stylová půlka: žánr, subžánr, nálada, instrumentace/produkce.",
+        "Na konec vždy přidej Temney a název skladby. Každý tag unikátní – neopakuj stejné slovo (ne 20x rap). Smíchej češtinu a angličtinu.",
         "Vrať POUZE tagy oddělené čárkou, bez číslování, bez mřížek, bez dalšího textu.",
       ].join("\n");
 
