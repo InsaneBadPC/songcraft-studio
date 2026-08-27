@@ -90,10 +90,11 @@ if (effect === "blur") {
     "[bgb][ctr]overlay=(W-w)/2:(H-h)/2",
   ].join(";");
 } else if (effect === "zoom" || effect === "zoom_wave") {
-  // Jemný pomalý přiblížení (Ken Burns). Upscale snižuje chvění zoompanu.
+  // Jemný pomalý přiblížení – celý 16:9 cover zůstane vidět, jen 6% zoom.
+  // Původní 3840:-2 + 1.14 ořezávalo okraje, teď 1920×1080 bez ořezu.
   baseChain = [
-    "[0:v]scale=3840:-2",
-    `zoompan=z='min(1+0.00009*on,1.14)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1920x1080:fps=${FPS}`,
+    "[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080",
+    `zoompan=z='min(1+0.00004*on,1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1920x1080:fps=${FPS}`,
   ].join(",");
 } else {
   baseChain = "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black";
