@@ -1,40 +1,136 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { LinearGradient } from "expo-linear-gradient";
+import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useMemo, useState, useCallback } from "react";
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import Animated, { FadeInDown, Layout } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { CoverArt, EmptyState, IconButton, LoadingState, SectionTitle, StatusChip, StudioHeader, formatDate } from "@/components/studio-ui";
+import { CoverArt, EmptyState, IconButton, Shimmer, StudioHeader, StatusChip, formatDate } from "@/components/studio-ui";
 import { ScreenContainer } from "@/components/screen-container";
 import { startPrivateLogin } from "@/constants/oauth";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
 import { TextImporter } from "@/components/text-importer";
-import { useMemo, useState } from "react";
 
 export default function TextsScreen() {
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   const { isAuthenticated, loading } = useAuth();
   const [search, setSearch] = useState("");
   const [albumId, setAlbumId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "complete">("all");
   const snapshot = trpc.studio.snapshot.useQuery(undefined, { enabled: isAuthenticated });
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => { setRefreshing(true); Haptics.selectionAsync().catch(()=>{}); await snapshot.refetch(); setRefreshing(false); }, [snapshot]);
+
   const allDocuments = snapshot.data?.documents ?? [];
-  const draftCount = allDocuments.filter((document) => document.status === "draft").length;
-  const completeCount = allDocuments.filter((document) => document.status === "complete").length;
-  const records = useMemo(() => (allDocuments).filter((document) => (!albumId || document.albumId === albumId) && (statusFilter === "all" || document.status === statusFilter) && `${document.title} ${document.lyrics ?? ""} ${document.stylePrompt ?? ""}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())), [albumId, search, statusFilter, allDocuments]);
-  if (loading || (isAuthenticated && snapshot.isLoading)) return <ScreenContainer><LoadingState /></ScreenContainer>;
+  const draftCount = allDocuments.filter((d) => d.status === "draft").length;
+  const completeCount = allDocuments.filter((d) => d.status === "complete").length;
+  const records = useMemo(() => allDocuments.filter((d) => (!albumId || d.albumId === albumId) && (statusFilter === "all" || d.status === statusFilter) && `${d.title} ${d.lyrics ?? ""} ${d.stylePrompt ?? ""}`.toLowerCase().includes(search.toLowerCase())), [albumId, search, statusFilter, allDocuments]);
+
+  if (loading || (isAuthenticated && snapshot.isLoading)) {
+    return <ScreenContainer className="px-5"><View style={{ paddingTop: 14, gap: 12 }}><Shimmer height={36} radius={16} /><Shimmer height={48} radius={16} /><View style={{ gap: 10, marginTop: 12 }}>{[1,2,3].map(i=> <View key={i} style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}><Shimmer width={60} height={60} radius={16} /><View style={{ flex:1, gap:8 }}><Shimmer height={14} width="60%" /><Shimmer height={12} width="80%" /></View></View>)}</View></View></ScreenContainer>;
+  }
   if (!isAuthenticated) return <ScreenContainer className="p-5 justify-center"><EmptyState icon="lock" title="Přihlášení je potřeba" text="Texty se ukládají do soukromého cloudového prostoru." action={<Pressable onPress={() => void startPrivateLogin()} style={[styles.login, { backgroundColor: colors.primary }]}><Text style={styles.loginText}>Přihlásit se</Text></Pressable>} /></ScreenContainer>;
-  return <ScreenContainer className="px-5"><FlatList data={records} keyExtractor={(item) => String(item.id)} showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} ListHeaderComponent={<>
-    <StudioHeader eyebrow="Kreativní dílna" title="Texty" action={<View style={styles.headerActions}><TextImporter /><IconButton label="Nový text" icon="add" onPress={() => router.push("/text/new" as never)} /></View>} />
-    <View style={[styles.search, { backgroundColor: colors.surface, borderColor: colors.border }]}><MaterialIcons name="search" size={20} color={colors.muted} /><TextInput value={search} onChangeText={setSearch} placeholder="Hledat v názvech, textech a promptech" placeholderTextColor={colors.muted} style={[styles.searchInput, { color: colors.foreground }]} /></View>
-    <SectionTitle title="Stav" />
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}><StatusFilterChip active={statusFilter === "all"} label={`Všechny (${allDocuments.length})`} onPress={() => setStatusFilter("all")} colors={colors} /><StatusFilterChip active={statusFilter === "draft"} label={`✎ Rozpracované (${draftCount})`} onPress={() => setStatusFilter("draft")} colors={colors} /><StatusFilterChip active={statusFilter === "complete"} label={`✓ Hotové (${completeCount})`} onPress={() => setStatusFilter("complete")} colors={colors} /></ScrollView>
-    <SectionTitle title="Album" />
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}><FilterChip active={!albumId} label="Všechna" onPress={() => setAlbumId(null)} />{snapshot.data?.albums.map((album) => <FilterChip key={album.id} active={albumId === album.id} label={album.name} onPress={() => setAlbumId(album.id)} />)}</ScrollView>
-    <SectionTitle title={`${records.length} ${records.length === 1 ? "položka" : records.length < 5 ? "položky" : "položek"}`} />
-  </>} renderItem={({ item }) => <Pressable onPress={() => router.push(`/text/${item.id}` as never)} style={({ pressed }) => [styles.row, { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}><CoverArt uri={item.coverUrl} title={item.title} size={60} /><View style={styles.copy}><View style={styles.copyTop}><Text numberOfLines={2} style={[styles.name, { color: colors.foreground }]}>{item.title}</Text><StatusChip state={item.status} /></View><Text numberOfLines={2} style={[styles.details, { color: colors.muted }]}>{item.lyrics?.trim() ? item.lyrics.trim().replace(/\n+/g, " · ") : "Zatím bez textu"}</Text><Text style={[styles.date, { color: colors.muted }]}>Upraveno {formatDate(item.updatedAt)}</Text></View><MaterialIcons name="chevron-right" size={22} color={colors.muted} /></Pressable>} ListEmptyComponent={<EmptyState icon="description" title={search ? "Žádná shoda" : "Textová dílna je prázdná"} text={search ? "Zkus změnit hledaný výraz nebo filtr alba." : "Založ koncept. Prompt, text, poznámky a přebal zůstanou pohromadě."} />} />
-  </ScreenContainer>;
+
+  return (
+    <ScreenContainer className="px-5">
+      <Animated.FlatList
+        data={records}
+        keyExtractor={(item) => String(item.id)}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 96 }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} progressBackgroundColor={colors.surface} />}
+        ListHeaderComponent={<>
+          <StudioHeader eyebrow="Kreativní dílna" title="Texty" action={<View style={styles.headerActions}><TextImporter /><Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(()=>{}); router.push("/text/new" as never); }} style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.97 : 1 }] }]}><LinearGradient colors={["#3B82F6", "#6366F1"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.fabGradient}><MaterialIcons name="add" size={22} color="#FFFFFF" /></LinearGradient></Pressable></View>} />
+          <View style={[styles.search, { backgroundColor: colors.surface, borderColor: "rgba(255,255,255,0.08)", shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 4 }]}>
+            <MaterialIcons name="search" size={20} color={colors.muted} />
+            <TextInput value={search} onChangeText={setSearch} placeholder="Hledat v názvech, textech a promptech" placeholderTextColor={colors.muted} style={[styles.searchInput, { color: colors.foreground }]} />
+            {search.length>0 && <Pressable onPress={()=>setSearch("")} hitSlop={8} style={styles.searchClear}><MaterialIcons name="close" size={18} color={colors.muted} /></Pressable>}
+          </View>
+          <View style={styles.filterGroup}>
+            <Text style={[styles.filterLabel, { color: colors.muted }]}>STAV</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+              <StatusFilterChip active={statusFilter==="all"} label={`Všechny (${allDocuments.length})`} onPress={()=>{Haptics.selectionAsync().catch(()=>{}); setStatusFilter("all");}} colors={colors} />
+              <StatusFilterChip active={statusFilter==="draft"} label={`✎ Rozpracované (${draftCount})`} onPress={()=>{Haptics.selectionAsync().catch(()=>{}); setStatusFilter("draft");}} colors={colors} />
+              <StatusFilterChip active={statusFilter==="complete"} label={`✓ Hotové (${completeCount})`} onPress={()=>{Haptics.selectionAsync().catch(()=>{}); setStatusFilter("complete");}} colors={colors} />
+            </ScrollView>
+          </View>
+          <View style={styles.filterGroup}>
+            <Text style={[styles.filterLabel, { color: colors.muted }]}>ALBUM</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+              <FilterChip active={!albumId} label="Všechna" onPress={() => { Haptics.selectionAsync().catch(()=>{}); setAlbumId(null); }} />
+              {snapshot.data?.albums.map((album) => <FilterChip key={album.id} active={albumId===album.id} label={album.name} onPress={() => { Haptics.selectionAsync().catch(()=>{}); setAlbumId(album.id); }} />)}
+            </ScrollView>
+          </View>
+          <View style={styles.countRow}>
+            <Text style={[styles.countText, { color: colors.foreground }]}>{records.length} {records.length===1 ? "položka" : records.length<5 ? "položky" : "položek"}</Text>
+            <Text style={[styles.countSub, { color: colors.muted }]}>tažením obnovíš</Text>
+          </View>
+        </>}
+        renderItem={({ item, index }) => (
+          <Animated.View entering={FadeInDown.delay(index*36).duration(380)} layout={Layout.springify()}>
+            <Pressable onPress={() => { Haptics.selectionAsync().catch(()=>{}); router.push(`/text/${item.id}` as never); }} style={({ pressed }) => [styles.row, { backgroundColor: colors.surface, borderColor: "rgba(255,255,255,0.08)", shadowColor: "#000", shadowOpacity: pressed?0.2:0.12, shadowRadius: pressed?8:16, shadowOffset:{width:0,height:pressed?4:8}, elevation:6, opacity: pressed?0.96:1, transform:[{scale: pressed?0.98:1}] }]}>
+              <CoverArt uri={item.coverUrl} title={item.title} size={60} />
+              <View style={styles.copy}>
+                <View style={styles.copyTop}><Text numberOfLines={2} style={[styles.name, { color: colors.foreground }]}>{item.title}</Text><StatusChip state={item.status} /></View>
+                <Text numberOfLines={2} style={[styles.details, { color: colors.muted }]}>{item.lyrics?.trim() ? item.lyrics.trim().replace(/\n+/g," · ") : "Zatím bez textu"}</Text>
+                <Text style={[styles.date, { color: colors.muted }]}>Upraveno {formatDate(item.updatedAt)}</Text>
+              </View>
+              <View style={[styles.chevron, { backgroundColor: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)" }]}><MaterialIcons name="chevron-right" size={18} color={colors.muted} /></View>
+            </Pressable>
+          </Animated.View>
+        )}
+        ListEmptyComponent={<EmptyState icon="description" title={search ? "Žádná shoda" : "Textová dílna je prázdná"} text={search ? "Zkus změnit hledaný výraz nebo filtr alba." : "Založ koncept. Prompt, text, poznámky a přebal zůstanou pohromadě."} />}
+      />
+      <View style={[styles.bottomBar, { paddingBottom: insets.bottom+12, backgroundColor: colors.background, borderTopColor: "rgba(255,255,255,0.06)" }]}>
+        <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(()=>{}); router.push("/text/new" as never); }} style={({ pressed }) => [styles.bottomCta, { transform:[{scale: pressed?0.97:1}] }]}>
+          <LinearGradient colors={["#3B82F6","#6366F1","#8B5CF6"]} start={{x:0,y:0}} end={{x:1,y:0}} style={StyleSheet.absoluteFill as any} />
+          <MaterialIcons name="edit" size={19} color="#FFFFFF" />
+          <Text style={styles.bottomCtaText}>Nový text</Text>
+        </Pressable>
+      </View>
+    </ScreenContainer>
+  );
 }
-function FilterChip({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) { const colors = useColors(); return <Pressable onPress={onPress} style={({ pressed }) => [styles.filter, { backgroundColor: active ? colors.primary : colors.surface, borderColor: active ? colors.primary : colors.border, opacity: pressed ? 0.7 : 1 }]}><Text numberOfLines={1} style={[styles.filterText, { color: active ? "#141317" : colors.foreground }]}>{label}</Text></Pressable>; }
-function StatusFilterChip({ active, label, onPress, colors }: { active: boolean; label: string; onPress: () => void; colors: ReturnType<typeof useColors> }) { return <Pressable onPress={onPress} style={({ pressed }) => [styles.statusChip, { backgroundColor: active ? colors.primary : colors.surface, borderColor: active ? colors.primary : colors.border, opacity: pressed ? 0.7 : 1 }]}><Text style={[styles.statusChipText, { color: active ? "#141317" : colors.foreground }]}>{label}</Text></Pressable>; }
-const styles = StyleSheet.create({ content: { paddingTop: 14, paddingBottom: 30 }, headerActions: { flexDirection: "row", gap: 7, alignItems: "center" }, search: { height: 48, borderRadius: 15, borderWidth: 1, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 9 }, searchInput: { flex: 1, fontSize: 14, paddingVertical: 0 }, filters: { paddingRight: 20, gap: 8 }, filter: { height: 36, paddingHorizontal: 14, justifyContent: "center", borderWidth: 1, borderRadius: 18 }, filterText: { fontSize: 13, fontWeight: "700" }, statusChip: { height: 36, paddingHorizontal: 14, justifyContent: "center", borderWidth: 1, borderRadius: 18 }, statusChipText: { fontSize: 12.5, fontWeight: "800" }, row: { borderWidth: 1, borderRadius: 19, padding: 10, flexDirection: "row", alignItems: "center", gap: 11, marginBottom: 9 }, copy: { flex: 1, gap: 4 }, copyTop: { flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "space-between" }, name: { flex: 1, fontSize: 15, fontWeight: "800" }, details: { fontSize: 12, lineHeight: 16 }, date: { fontSize: 11, fontWeight: "600" }, login: { minHeight: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" }, loginText: { color: "#141317", fontWeight: "800" } });
+
+function FilterChip({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
+  const colors = useColors();
+  return <Pressable onPress={onPress} style={({ pressed }) => [styles.filter, { backgroundColor: active ? colors.primary : colors.surface, borderColor: active ? colors.primary : "rgba(255,255,255,0.08)", opacity: pressed?0.85:1, transform:[{scale: pressed?0.97:1}] }]}><Text numberOfLines={1} style={[styles.filterText, { color: active ? "#FFFFFF" : colors.foreground }]}>{label}</Text></Pressable>;
+}
+function StatusFilterChip({ active, label, onPress, colors }: { active: boolean; label: string; onPress: () => void; colors: ReturnType<typeof useColors> }) {
+  return <Pressable onPress={onPress} style={({ pressed }) => [styles.statusChip, { backgroundColor: active ? colors.primary : colors.surface, borderColor: active ? colors.primary : "rgba(255,255,255,0.08)", opacity: pressed?0.85:1, transform:[{scale: pressed?0.97:1}] }]}><Text style={[styles.statusChipText, { color: active ? "#FFFFFF" : colors.foreground }]}>{label}</Text></Pressable>;
+}
+const styles = StyleSheet.create({
+  content: { paddingTop: 14 },
+  headerActions: { flexDirection: "row", gap: 8, alignItems: "center" },
+  fabGradient: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  search: { height: 48, borderRadius: 16, borderWidth: 1, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4 },
+  searchInput: { flex: 1, fontSize: 15, paddingVertical: 0, fontWeight: "500" },
+  searchClear: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.06)" },
+  filterGroup: { marginTop: 16, gap: 8 },
+  filterLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 1, marginLeft: 2 },
+  filters: { paddingRight: 20, gap: 8, paddingVertical: 2 },
+  filter: { height: 44, paddingHorizontal: 14, justifyContent: "center", borderWidth: 1, borderRadius: 18, minWidth: 44 },
+  filterText: { fontSize: 13, fontWeight: "600", letterSpacing: -0.1 },
+  statusChip: { height: 44, paddingHorizontal: 14, justifyContent: "center", borderWidth: 1, borderRadius: 18 },
+  statusChipText: { fontSize: 12.5, fontWeight: "700" },
+  countRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 20, marginBottom: 8, paddingHorizontal: 2 },
+  countText: { fontSize: 13, fontWeight: "700", letterSpacing: -0.2 },
+  countSub: { fontSize: 11, fontWeight: "500", opacity: 0.7 },
+  row: { borderWidth: 1, borderRadius: 20, padding: 12, flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 10 },
+  copy: { flex: 1, gap: 4 },
+  copyTop: { flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "space-between" },
+  name: { flex: 1, fontSize: 15, fontWeight: "700", letterSpacing: -0.2, lineHeight: 19 },
+  details: { fontSize: 12, lineHeight: 16, opacity: 0.9 },
+  date: { fontSize: 11, fontWeight: "600", opacity: 0.7 },
+  chevron: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  login: { minHeight: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  loginText: { color: "#FFFFFF", fontWeight: "700" },
+  bottomBar: { position: "absolute", left: 0, right: 0, bottom: 0, borderTopWidth: 1, paddingHorizontal: 20, paddingTop: 12, flexDirection: "row" },
+  bottomCta: { flex: 1, height: 52, borderRadius: 16, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.12)" },
+  bottomCtaText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700", letterSpacing: -0.2 },
+});

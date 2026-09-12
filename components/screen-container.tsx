@@ -1,43 +1,17 @@
 import { View, type ViewProps } from "react-native";
 import { SafeAreaView, type Edge } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { cn } from "@/lib/utils";
+import { useColors } from "@/hooks/use-colors";
 
 export interface ScreenContainerProps extends ViewProps {
-  /**
-   * SafeArea edges to apply. Defaults to ["top", "left", "right"].
-   * Bottom is typically handled by Tab Bar.
-   */
   edges?: Edge[];
-  /**
-   * Tailwind className for the content area.
-   */
   className?: string;
-  /**
-   * Additional className for the outer container (background layer).
-   */
   containerClassName?: string;
-  /**
-   * Additional className for the SafeAreaView (content layer).
-   */
   safeAreaClassName?: string;
 }
 
-/**
- * A container component that properly handles SafeArea and background colors.
- *
- * The outer View extends to full screen (including status bar area) with the background color,
- * while the inner SafeAreaView ensures content is within safe bounds.
- *
- * Usage:
- * ```tsx
- * <ScreenContainer className="p-4">
- *   <Text className="text-2xl font-bold text-foreground">
- *     Welcome
- *   </Text>
- * </ScreenContainer>
- * ```
- */
 export function ScreenContainer({
   children,
   edges = ["top", "left", "right"],
@@ -47,20 +21,13 @@ export function ScreenContainer({
   style,
   ...props
 }: ScreenContainerProps) {
+  const colors = useColors();
   return (
-    <View
-      className={cn(
-        "flex-1",
-        "bg-background",
-        containerClassName
-      )}
-      {...props}
-    >
-      <SafeAreaView
-        edges={edges}
-        className={cn("flex-1", safeAreaClassName)}
-        style={style}
-      >
+    <View className={cn("flex-1", containerClassName)} style={[{ backgroundColor: colors.background }, style]} {...props}>
+      {/* Subtle 2026 depth - soft radial glow on top */}
+      <LinearGradient colors={["rgba(59,130,246,0.06)", "transparent", "transparent"]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={{ position: "absolute", top: 0, left: 0, right: 0, height: 320, opacity: 0.6 }} pointerEvents="none" />
+      <View style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, backgroundColor: "rgba(255,255,255,0.06)" }} pointerEvents="none" />
+      <SafeAreaView edges={edges} className={cn("flex-1", safeAreaClassName)} style={{ flex: 1 }}>
         <View className={cn("flex-1", className)}>{children}</View>
       </SafeAreaView>
     </View>
