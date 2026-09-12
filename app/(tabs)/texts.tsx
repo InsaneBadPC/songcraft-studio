@@ -15,6 +15,16 @@ import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
 import { TextImporter } from "@/components/text-importer";
 
+type Phase = "draft" | "album" | "mp3" | "published";
+const phaseMeta = (phase: Phase, colors: any) => {
+  switch (phase) {
+    case "published": return { label: "Publikováno", icon: "public" as const, color: colors.success, bg: "rgba(16,185,129,0.14)", border: colors.success };
+    case "mp3": return { label: "S MP3", icon: "music-note" as const, color: colors.success, bg: "rgba(16,185,129,0.10)", border: colors.success };
+    case "album": return { label: "V albu", icon: "album" as const, color: colors.primary, bg: "rgba(59,130,246,0.12)", border: colors.primary };
+    default: return { label: "Rozpracováno", icon: "edit-note" as const, color: colors.muted, bg: "rgba(148,163,184,0.10)", border: colors.muted };
+  }
+};
+
 export default function TextsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -22,6 +32,7 @@ export default function TextsScreen() {
   const [search, setSearch] = useState("");
   const [albumId, setAlbumId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "complete">("all");
+  const [phaseFilter, setPhaseFilter] = useState<Phase | "all">("all");
   const snapshot = trpc.studio.snapshot.useQuery(undefined, { enabled: isAuthenticated });
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => { setRefreshing(true); Haptics.selectionAsync().catch(()=>{}); await snapshot.refetch(); setRefreshing(false); }, [snapshot]);
@@ -29,7 +40,21 @@ export default function TextsScreen() {
   const allDocuments = snapshot.data?.documents ?? [];
   const draftCount = allDocuments.filter((d) => d.status === "draft").length;
   const completeCount = allDocuments.filter((d) => d.status === "complete").length;
-  const records = useMemo(() => allDocuments.filter((d) => (!albumId || d.albumId === albumId) && (statusFilter === "all" || d.status === statusFilter) && `${d.title} ${d.lyrics ?? ""} ${d.stylePrompt ?? ""}`.toLowerCase().includes(search.toLowerCase())), [albumId, search, statusFilter, allDocuments]);
+  // phase counts
+  const phaseOf = (doc: any) => {
+    const song = snapshot.data?.songs.find((s: any) => s.sourceDocumentId === doc.id);
+    const hasMp3 = !!snapshot.data?.versions.find((v: any) => v.songId === song?.id);
+    if ((song as any)?.isPublished) return "published" as Phase;
+    if (hasMp3) return "mp3" as Phase;
+    if (doc.albumId || (song as any)?.albumId) return "album" as Phase;
+    return "draft" as Phase;
+  };
+  const records = useMemo(() => allDocuments.filter((d) => {
+    if (albumId && d.albumId !== albumId) return false;
+    if (statusFilter !== "all" && d.status !== statusFilter) return false;
+    if (phaseFilter !== "all" && phaseOf(d) !== phaseFilter) return false;
+    return `${d.title} ${d.lyrics ?? ""} ${d.stylePrompt ?? ""}`.toLowerCase().includes(search.toLowerCase());
+  }), [albumId, search, statusFilter, phaseFilter, allDocuments, snapshot.data?.songs, snapshot.data?.versions]);
 
   if (loading || (isAuthenticated && snapshot.isLoading)) {
     return <ScreenContainer className="px-5"><View style={{ paddingTop: 14, gap: 12 }}><Shimmer height={36} radius={16} /><Shimmer height={48} radius={16} /><View style={{ gap: 10, marginTop: 12 }}>{[1,2,3].map(i=> <View key={i} style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}><Shimmer width={60} height={60} radius={16} /><View style={{ flex:1, gap:8 }}><Shimmer height={14} width="60%" /><Shimmer height={12} width="80%" /></View></View>)}</View></View></ScreenContainer>;
@@ -60,6 +85,16 @@ export default function TextsScreen() {
             </ScrollView>
           </View>
           <View style={styles.filterGroup}>
+            <Text style={[styles.filterLabel, { color: colors.muted }]}>FÁZE</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+              <FilterChip active={phaseFilter==="all"} label="Vše" onPress={() => { Haptics.selectionAsync().catch(()=>{}); setPhaseFilter("all"); }} />
+              <FilterChip active={phaseFilter==="draft"} label="Rozpracované" dotColor={colors.muted} onPress={() => { Haptics.selectionAsync().catch(()=>{}); setPhaseFilter("draft"); }} />
+              <FilterChip active={phaseFilter==="album"} label="V albu" dotColor={colors.primary} onPress={() => { Haptics.selectionAsync().catch(()=>{}); setPhaseFilter("album"); }} />
+              <FilterChip active={phaseFilter==="mp3"} label="S MP3" dotColor={colors.success} onPress={() => { Haptics.selectionAsync().catch(()=>{}); setPhaseFilter("mp3"); }} />
+              <FilterChip active={phaseFilter==="published"} label="Publikované" dotColor={colors.success} onPress={() => { Haptics.selectionAsync().catch(()=>{}); setPhaseFilter("published"); }} />
+            </ScrollView>
+          </View>
+          <View style={styles.filterGroup}>
             <Text style={[styles.filterLabel, { color: colors.muted }]}>ALBUM</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
               <FilterChip active={!albumId} label="Všechna" onPress={() => { Haptics.selectionAsync().catch(()=>{}); setAlbumId(null); }} />
@@ -71,19 +106,32 @@ export default function TextsScreen() {
             <Text style={[styles.countSub, { color: colors.muted }]}>tažením obnovíš</Text>
           </View>
         </>}
-        renderItem={({ item, index }) => (
-          <Animated.View entering={FadeInDown.delay(index*36).duration(380)} layout={Layout.springify()}>
-            <Pressable onPress={() => { Haptics.selectionAsync().catch(()=>{}); router.push(`/text/${item.id}` as never); }} style={({ pressed }) => [styles.row, { backgroundColor: colors.surface, borderColor: "rgba(255,255,255,0.08)", shadowColor: "#000", shadowOpacity: pressed?0.2:0.12, shadowRadius: pressed?8:16, shadowOffset:{width:0,height:pressed?4:8}, elevation:6, opacity: pressed?0.96:1, transform:[{scale: pressed?0.98:1}] }]}>
-              <CoverArt uri={item.coverUrl} title={item.title} size={60} />
+        renderItem={({ item, index }) => {
+          const song = snapshot.data?.songs.find((s: any) => s.sourceDocumentId === item.id);
+          const hasMp3 = !!snapshot.data?.versions.find((v: any) => v.songId === (song as any)?.id);
+          const phase = (() => { if ((song as any)?.isPublished) return "published" as Phase; if (hasMp3) return "mp3" as Phase; if (item.albumId || (song as any)?.albumId) return "album" as Phase; return "draft" as Phase; })();
+          const meta = phaseMeta(phase, colors);
+          const album = snapshot.data?.albums.find((a) => a.id === (item.albumId || (song as any)?.albumId));
+          return (
+          <Animated.View entering={FadeInDown.delay(index*32).duration(360)} layout={Layout.springify()}>
+            <Pressable onPress={() => { Haptics.selectionAsync().catch(()=>{}); router.push(`/text/${item.id}` as never); }} style={({ pressed }) => [styles.row, { backgroundColor: colors.surface, borderColor: meta.border, borderLeftWidth: 3, borderLeftColor: meta.border, shadowColor: "#000", shadowOpacity: pressed?0.2:0.12, shadowRadius: pressed?8:16, shadowOffset:{width:0,height:pressed?4:8}, elevation:6, opacity: pressed?0.96:1, transform:[{scale: pressed?0.98:1}] }]}>
+              <View style={styles.coverStack}>
+                <CoverArt uri={item.coverUrl} title={item.title} size={60} />
+                {album?.coverUrl ? <View style={[styles.albumBadge, { borderColor: colors.background, backgroundColor: colors.surface }]}><CoverArt uri={album.coverUrl} title={album.name} size={26} /></View> : null}
+              </View>
               <View style={styles.copy}>
                 <View style={styles.copyTop}><Text numberOfLines={2} style={[styles.name, { color: colors.foreground }]}>{item.title}</Text><StatusChip state={item.status} /></View>
+                <View style={styles.phaseRow}>
+                  <View style={[styles.phaseChip, { backgroundColor: meta.bg, borderColor: `${meta.color}30` }]}><MaterialIcons name={meta.icon} size={12} color={meta.color} /><Text style={[styles.phaseText, { color: meta.color }]}>{meta.label}</Text></View>
+                  {album ? <View style={[styles.phaseChip, { backgroundColor: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)" }]}><MaterialIcons name="album" size={11} color={colors.muted} /><Text style={[styles.phaseText, { color: colors.muted }]}>{album.name}</Text></View> : null}
+                </View>
                 <Text numberOfLines={2} style={[styles.details, { color: colors.muted }]}>{item.lyrics?.trim() ? item.lyrics.trim().replace(/\n+/g," · ") : "Zatím bez textu"}</Text>
                 <Text style={[styles.date, { color: colors.muted }]}>Upraveno {formatDate(item.updatedAt)}</Text>
               </View>
               <View style={[styles.chevron, { backgroundColor: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)" }]}><MaterialIcons name="chevron-right" size={18} color={colors.muted} /></View>
             </Pressable>
           </Animated.View>
-        )}
+        )}}
         ListEmptyComponent={<EmptyState icon="description" title={search ? "Žádná shoda" : "Textová dílna je prázdná"} text={search ? "Zkus změnit hledaný výraz nebo filtr alba." : "Založ koncept. Prompt, text, poznámky a přebal zůstanou pohromadě."} />}
       />
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom+12, backgroundColor: colors.background, borderTopColor: "rgba(255,255,255,0.06)" }]}>
@@ -97,9 +145,9 @@ export default function TextsScreen() {
   );
 }
 
-function FilterChip({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
+function FilterChip({ active, label, dotColor, onPress }: { active: boolean; label: string; dotColor?: string; onPress: () => void }) {
   const colors = useColors();
-  return <Pressable onPress={onPress} style={({ pressed }) => [styles.filter, { backgroundColor: active ? colors.primary : colors.surface, borderColor: active ? colors.primary : "rgba(255,255,255,0.08)", opacity: pressed?0.85:1, transform:[{scale: pressed?0.97:1}] }]}><Text numberOfLines={1} style={[styles.filterText, { color: active ? "#FFFFFF" : colors.foreground }]}>{label}</Text></Pressable>;
+  return <Pressable onPress={onPress} style={({ pressed }) => [styles.filter, { backgroundColor: active ? colors.primary : colors.surface, borderColor: active ? colors.primary : "rgba(255,255,255,0.08)", opacity: pressed?0.85:1, transform:[{scale: pressed?0.97:1}] }]}>{dotColor ? <View style={[styles.dot, { backgroundColor: dotColor }]} /> : null}<Text numberOfLines={1} style={[styles.filterText, { color: active ? "#FFFFFF" : colors.foreground }]}>{label}</Text></Pressable>;
 }
 function StatusFilterChip({ active, label, onPress, colors }: { active: boolean; label: string; onPress: () => void; colors: ReturnType<typeof useColors> }) {
   return <Pressable onPress={onPress} style={({ pressed }) => [styles.statusChip, { backgroundColor: active ? colors.primary : colors.surface, borderColor: active ? colors.primary : "rgba(255,255,255,0.08)", opacity: pressed?0.85:1, transform:[{scale: pressed?0.97:1}] }]}><Text style={[styles.statusChipText, { color: active ? "#FFFFFF" : colors.foreground }]}>{label}</Text></Pressable>;
@@ -114,7 +162,7 @@ const styles = StyleSheet.create({
   filterGroup: { marginTop: 16, gap: 8 },
   filterLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 1, marginLeft: 2 },
   filters: { paddingRight: 20, gap: 8, paddingVertical: 2 },
-  filter: { height: 44, paddingHorizontal: 14, justifyContent: "center", borderWidth: 1, borderRadius: 18, minWidth: 44 },
+  filter: { height: 44, paddingHorizontal: 14, justifyContent: "center", borderWidth: 1, borderRadius: 18, minWidth: 44, flexDirection: "row", alignItems: "center", gap: 6 },
   filterText: { fontSize: 13, fontWeight: "600", letterSpacing: -0.1 },
   statusChip: { height: 44, paddingHorizontal: 14, justifyContent: "center", borderWidth: 1, borderRadius: 18 },
   statusChipText: { fontSize: 12.5, fontWeight: "700" },
@@ -122,11 +170,17 @@ const styles = StyleSheet.create({
   countText: { fontSize: 13, fontWeight: "700", letterSpacing: -0.2 },
   countSub: { fontSize: 11, fontWeight: "500", opacity: 0.7 },
   row: { borderWidth: 1, borderRadius: 20, padding: 12, flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 10 },
+  coverStack: { width: 60, height: 60, alignItems: "center", justifyContent: "center" },
+  albumBadge: { position: "absolute", bottom: -4, right: -6, width: 30, height: 30, borderRadius: 15, borderWidth: 2, overflow: "hidden", alignItems: "center", justifyContent: "center" },
   copy: { flex: 1, gap: 4 },
   copyTop: { flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "space-between" },
   name: { flex: 1, fontSize: 15, fontWeight: "700", letterSpacing: -0.2, lineHeight: 19 },
+  phaseRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  phaseChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, height: 20, borderRadius: 10, borderWidth: 1 },
+  phaseText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.2 },
   details: { fontSize: 12, lineHeight: 16, opacity: 0.9 },
   date: { fontSize: 11, fontWeight: "600", opacity: 0.7 },
+  dot: { width: 7, height: 7, borderRadius: 4 },
   chevron: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   login: { minHeight: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   loginText: { color: "#FFFFFF", fontWeight: "700" },
