@@ -11,6 +11,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { assetToBase64 } from "@/lib/file-base64";
+import { clearDraft, loadDraft, useDraftStorage } from "@/lib/use-draft-storage";
 import { takePickedStylePrompt } from "@/lib/style-prompt-picker";
 import { trpc } from "@/lib/trpc";
 
@@ -34,9 +35,25 @@ export function SongEditor({ songId }: { songId?: string }) {
   const [coverGenerating, setCoverGenerating] = useState(false);
   const [coverDialogVisible, setCoverDialogVisible] = useState(false);
   const [coverNote, setCoverNote] = useState("");
+  const [draftRestored, setDraftRestored] = useState(false);
   const albumName = snapshot.data?.albums.find((album) => album.id === form.albumId)?.name ?? "Bez alba";
 
   useEffect(() => { if (song) setForm({ title: song.title, albumId: song.albumId, stylePrompts: song.stylePrompts.length ? [...song.stylePrompts] : [""], lyrics: song.lyrics ?? "", notes: song.notes ?? "", coverStorageKey: song.coverStorageKey, coverUrl: song.coverUrl }); }, [song]);
+  useDraftStorage(form, songId ?? null);
+  useEffect(() => {
+    let cancelled = false;
+    if (songId) {
+      void loadDraft(songId).then((draft) => {
+        if (cancelled || !draft) return;
+        const serverNewer = song && new Date(song.updatedAt).getTime() >= draft.savedAt;
+        if (!serverNewer) {
+          setForm((current) => ({ ...current, title: draft.title, albumId: draft.albumId, stylePrompts: draft.stylePrompts?.length ? draft.stylePrompts : [draft.stylePrompt || ""], lyrics: draft.lyrics, notes: draft.notes, coverStorageKey: draft.coverStorageKey, coverUrl: draft.coverUrl }));
+          setDraftRestored(true);
+        } else { void clearDraft(songId); }
+      });
+    }
+    return () => { cancelled = true; };
+  }, [songId]);
   useFocusEffect(useMemo(() => () => {
     const picked = takePickedStylePrompt();
     if (picked) setForm((current) => ({ ...current, stylePrompts: [...current.stylePrompts.filter((entry) => entry.trim()), picked] }));
@@ -51,6 +68,9 @@ export function SongEditor({ songId }: { songId?: string }) {
       const stylePrompts = form.stylePrompts.map((entry) => entry.trim()).filter(Boolean);
       const payload = { title: form.title.trim(), albumId: form.albumId, stylePrompts, lyrics: form.lyrics || null, notes: form.notes || null, coverStorageKey: form.coverStorageKey, coverUrl: form.coverUrl };
       const savedId = songId ? (await update.mutateAsync({ id: songId, ...payload }), songId) : await create.mutateAsync(payload);
+      await clearDraft(songId ?? null);
+      await clearDraft(savedId);
+      setDraftRestored(false);
       await utils.studio.snapshot.invalidate();
       router.replace(`/song/${savedId}` as never);
     } catch (error) { Alert.alert("Skladbu se nepodařilo uložit", error instanceof Error ? error.message : "Zkus to znovu."); } finally { setSaving(false); }
@@ -93,7 +113,7 @@ export function SongEditor({ songId }: { songId?: string }) {
     } catch (error) { Alert.alert("Uložení se nezdařilo", error instanceof Error ? error.message : "Zkus to znovu."); }
   };
 
-  return <ScreenContainer edges={["top", "bottom", "left", "right"]}><KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.content, { paddingBottom: 180 }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" automaticallyAdjustKeyboardInsets><View style={styles.topbar}><IconButton label="Zpět" icon="arrow-back" onPress={() => router.back()} /><Text numberOfLines={1} style={[styles.topbarName, { color: colors.foreground }]}>{songId ? "Upravit skladbu" : "Nová skladba"}</Text><Pressable onPress={() => void save()} style={({ pressed }) => [styles.save, { opacity: saving || pressed ? 0.6 : 1 }]}><Text style={[styles.saveText, { color: colors.primary }]}>{saving ? "Ukládám" : "Uložit"}</Text></Pressable></View>
+  return <ScreenContainer edges={["top", "bottom", "left", "right"]}><KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.content, { paddingBottom: 180 }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" automaticallyAdjustKeyboardInsets>{draftRestored ? <View style={[styles.draftNotice, { backgroundColor: `${colors.accent}14`, borderColor: `${colors.accent}55` }]}><MaterialIcons name="restore" size={16} color={colors.accent} /><Text style={[styles.draftNoticeText, { color: colors.foreground }]}>Obnoven rozpracovaný text — klepni na Uložit pro potvrzení.</Text></View> : null}<View style={styles.topbar}><IconButton label="Zpět" icon="arrow-back" onPress={() => router.back()} /><Text numberOfLines={1} style={[styles.topbarName, { color: colors.foreground }]}>{songId ? "Upravit skladbu" : "Nová skladba"}</Text><Pressable onPress={() => void save()} style={({ pressed }) => [styles.save, { opacity: saving || pressed ? 0.6 : 1 }]}><Text style={[styles.saveText, { color: colors.primary }]}>{saving ? "Ukládám" : "Uložit"}</Text></Pressable></View>
     <View style={[styles.flow, { backgroundColor: `${colors.primary}13`, borderColor: `${colors.primary}45` }]}><MaterialIcons name="account-tree" size={20} color={colors.primary} /><Text style={[styles.flowText, { color: colors.muted }]}>Tato položka drží pohromadě text, obrázek, MP3 verze, metadata a album.</Text></View>
     <View style={styles.coverBlock}><Pressable onPress={() => void uploadCover()} style={({ pressed }) => [styles.cover, { borderColor: colors.border, backgroundColor: colors.surface, opacity: pressed ? 0.72 : 1 }]}>{form.coverUrl ? <Image source={{ uri: form.coverUrl }} style={styles.coverImage} resizeMode="contain" /> : <><View style={[styles.coverIcon, { backgroundColor: `${colors.primary}20` }]}><MaterialIcons name="add-photo-alternate" size={25} color={colors.primary} /></View><Text style={[styles.coverTitle, { color: colors.foreground }]}>Přidat vlastní obrázek skladby</Text><Text style={[styles.coverText, { color: colors.muted }]}>Celá kompozice bez ořezu v 16:9 pro katalog i YouTube video.</Text></>}</Pressable><Pressable onPress={openCoverDialog} disabled={coverGenerating} style={({ pressed }) => [styles.generateCover, { borderColor: colors.primary, backgroundColor: `${colors.primary}12`, opacity: coverGenerating || pressed ? 0.62 : 1 }]}><MaterialIcons name={coverGenerating ? "hourglass-top" : "auto-awesome"} size={19} color={colors.primary} /><View style={styles.generateCopy}><Text style={[styles.generateTitle, { color: colors.primary }]}>{coverGenerating ? "Bezplatná AI vytváří 16:9 obal…" : "Vygenerovat obrázek skladby"}</Text><Text style={[styles.generateText, { color: colors.muted }]}>{songId ? "16:9 obraz s pevně vloženým Temney, albem a názvem skladby." : "Nejprve skladbu ulož, pak můžeš vytvořit obal."}</Text></View></Pressable></View>
     <Field label="Název skladby" value={form.title} onChangeText={(title) => setForm((current) => ({ ...current, title }))} placeholder="Např. Noční signál" autoFocus={!songId} colors={colors} />
@@ -126,7 +146,7 @@ const Field = memo(function Field({ label, helper, value, onChangeText, placehol
 const AlbumChip = memo(function AlbumChip({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) { const colors = useColors(); return <Pressable onPress={onPress} style={({ pressed }) => [styles.albumChip, { backgroundColor: active ? colors.primary : colors.surface, borderColor: active ? colors.primary : colors.border, opacity: pressed ? 0.68 : 1 }]}><Text numberOfLines={1} style={[styles.albumChipText, { color: active ? "#141317" : colors.foreground }]}>{label}</Text></Pressable>; })
 
 const styles = StyleSheet.create({
-  content: { padding: 20, paddingTop: 14, paddingBottom: 38, gap: 18 }, topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }, topbarName: { flex: 1, fontSize: 15, fontWeight: "800", textAlign: "center" }, save: { minWidth: 49, minHeight: 42, alignItems: "flex-end", justifyContent: "center" }, saveText: { fontSize: 14, fontWeight: "800" }, flow: { borderWidth: 1, borderRadius: 16, padding: 13, flexDirection: "row", gap: 9, alignItems: "center" }, flowText: { flex: 1, fontSize: 12, lineHeight: 17 },
+  content: { padding: 20, paddingTop: 14, paddingBottom: 38, gap: 18 }, draftNotice: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 }, draftNoticeText: { flex: 1, fontSize: 12.5, lineHeight: 17, fontWeight: "600" }, topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }, topbarName: { flex: 1, fontSize: 15, fontWeight: "800", textAlign: "center" }, save: { minWidth: 49, minHeight: 42, alignItems: "flex-end", justifyContent: "center" }, saveText: { fontSize: 14, fontWeight: "800" }, flow: { borderWidth: 1, borderRadius: 16, padding: 13, flexDirection: "row", gap: 9, alignItems: "center" }, flowText: { flex: 1, fontSize: 12, lineHeight: 17 },
   promptTools: { flexDirection: "row", gap: 8 },
   promptTool: { borderWidth: 1, borderRadius: 13, paddingHorizontal: 12, height: 34, flexDirection: "row", alignItems: "center", gap: 6 },
   promptToolText: { fontSize: 12.5, fontWeight: "800" },
