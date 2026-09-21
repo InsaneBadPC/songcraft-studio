@@ -2,6 +2,14 @@
 import "./scripts/load-env.js";
 import type { ExpoConfig } from "expo/config";
 
+// Jediný zdroj pravdy pro verzi aplikace: package.json.
+const appVersion: string = require("./package.json").version;
+// Android verze musí být monotónně rostoucí celé číslo (major*10000 + minor*100 + patch).
+const versionCode = appVersion
+  .split(".")
+  .map((part: string) => parseInt(part, 10) || 0)
+  .reduce((acc: number, part: number, index: number) => acc + part * Math.pow(100, 2 - index), 0);
+
 // Nezávislý identifikátor aplikace pro externí Android/iOS sestavení.
 const rawBundleId = "com.temney.songcraftstudio";
 const bundleId =
@@ -33,7 +41,7 @@ const env = {
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
-  version: "1.0.0",
+  version: appVersion,
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
@@ -56,7 +64,8 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    permissions: ["POST_NOTIFICATIONS"],
+    versionCode,
+    permissions: ["POST_NOTIFICATIONS", "REQUEST_INSTALL_PACKAGES"],
     intentFilters: [
       {
         action: "VIEW",

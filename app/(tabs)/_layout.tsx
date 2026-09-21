@@ -5,6 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { UpdateBanner } from "@/components/update-banner";
 import { useColors } from "@/hooks/use-colors";
 
 export default function TabLayout() {
@@ -13,6 +14,7 @@ export default function TabLayout() {
   const bottomPadding = Platform.OS === "web" ? 12 : Math.max(insets.bottom, 12);
 
   return (
+    <>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -50,5 +52,7 @@ export default function TabLayout() {
       <Tabs.Screen name="assistant" options={{ title: "Asistent", tabBarIcon: ({ color, focused }) => <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: focused ? `${colors.primary}18` : "transparent", alignItems: "center", justifyContent: "center", borderWidth: focused ? 1 : 0, borderColor: focused ? "rgba(255,255,255,0.08)" : "transparent" }}><IconSymbol size={20} name="sparkles" color={color} /></View> }} />
       <Tabs.Screen name="settings" options={{ title: "Nastavení", tabBarIcon: ({ color, focused }) => <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: focused ? `${colors.primary}18` : "transparent", alignItems: "center", justifyContent: "center", borderWidth: focused ? 1 : 0, borderColor: focused ? "rgba(255,255,255,0.08)" : "transparent" }}><IconSymbol size={20} name="gearshape.fill" color={color} /></View> }} />
     </Tabs>
+    <UpdateBanner />
+    </>
   );
 }

@@ -7,6 +7,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { startPrivateLogin } from "@/constants/oauth";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
+import { checkForUpdate, installUpdate, CURRENT_VERSION, type AppUpdate } from "@/lib/app-update";
 import { downloadOrShareFile } from "@/lib/download-and-share";
 import { trpc } from "@/lib/trpc";
 
@@ -18,6 +19,36 @@ export default function SettingsScreen() {
   const exportWholeLibrary = trpc.studio.exportWholeLibrary.useMutation();
   const exportLyricsTxt = trpc.studio.exportLyricsTxt.useMutation();
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [update, setUpdate] = useState<AppUpdate | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState(0);
+
+  const runUpdateCheck = async () => {
+    setChecking(true);
+    try {
+      const found = await checkForUpdate();
+      setUpdate(found);
+      if (!found) Alert.alert("Máš nejnovější verzi", `SongCraft Studio ${CURRENT_VERSION} je aktuální.`);
+    } catch (error) {
+      Alert.alert("Kontrolu se nepodařilo dokončit", error instanceof Error ? error.message : "Zkontroluj připojení a zkus to znovu.");
+    } finally {
+      setChecking(false);
+    }
+  };
+  const applyUpdate = async (target: AppUpdate) => {
+    setInstalling(true);
+    setUpdateProgress(0);
+    try {
+      await installUpdate(target, setUpdateProgress);
+      Alert.alert("Dokonči instalaci", "V systémovém okně potvrď instalaci nové verze SongCraft Studio.");
+    } catch (error) {
+      Alert.alert("Aktualizace se nezdařila", error instanceof Error ? error.message : "Zkus to znovu.");
+    } finally {
+      setInstalling(false);
+      setUpdateProgress(0);
+    }
+  };
 
   if (loading || (isAuthenticated && snapshot.isLoading)) return <ScreenContainer><LoadingState /></ScreenContainer>;
   if (!isAuthenticated) return <ScreenContainer className="p-5 justify-center"><EmptyState icon="lock" title="Připoj své studio" text="Přihlášení vytváří soukromé úložiště pro tvé texty, přebaly a MP3." action={<Pressable onPress={() => void startPrivateLogin()} style={[styles.login, { backgroundColor: colors.primary }]}><Text style={styles.loginText}>Přihlásit se</Text></Pressable>} /></ScreenContainer>;
@@ -48,6 +79,7 @@ export default function SettingsScreen() {
     {exportStatus ? <View style={[styles.exportProgress, { backgroundColor: `${colors.primary}16`, borderColor: `${colors.primary}4A` }]}><ActivityIndicator size="small" color={colors.primary} /><Text style={[styles.exportProgressText, { color: colors.foreground }]}>{exportStatus}</Text></View> : null}
     <SectionTitle title="Zálohy jednotlivých alb" />{albums.length ? albums.map((album) => <Pressable key={album.id} disabled={exporting} onPress={() => void exportLibrary(album)} style={({ pressed }) => [styles.albumExport, { backgroundColor: colors.surface, borderColor: colors.border, opacity: exporting || pressed ? 0.65 : 1 }]}><View style={[styles.albumExportIcon, { backgroundColor: `${colors.primary}1C` }]}><MaterialIcons name="folder-zip" size={21} color={colors.primary} /></View><View style={styles.albumExportCopy}><Text numberOfLines={1} style={[styles.albumExportTitle, { color: colors.foreground }]}>{album.name}</Text><Text style={[styles.albumExportText, { color: colors.muted }]}>Exportovat toto album samostatně</Text></View><MaterialIcons name="download" size={20} color={colors.primary} /></Pressable>) : <Text style={[styles.emptyAlbumNote, { color: colors.muted }]}>Založ album, aby šlo stáhnout samostatnou zálohu.</Text>}
     <SectionTitle title="Jak systém pracuje" /><Info icon="edit-note" title="Koncept → skladba" text="Označením textu jako hotového zůstane koncept zachován a vznikne samostatná katalogová položka." /><Info icon="content-copy" title="Bezpečná práce s MP3" text="Při exportu ID3 tagů vzniká nová kopie. Původně nahraná verze se nikdy nepřepisuje." /><Info icon="storage" title="Rozdělené uložení" text="Texty a vazby alb jsou v databázi; přebaly a MP3 jsou v souborovém úložišti." />
+    <SectionTitle title="Aplikace" /><View style={{ borderWidth: 1, borderRadius: 19, padding: 14, gap: 11, backgroundColor: colors.surface, borderColor: colors.border }}><View style={{ flexDirection: "row", alignItems: "center", gap: 11 }}><View style={{ width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: `${colors.primary}1C` }}><MaterialIcons name="system-update" size={22} color={colors.primary} /></View><View style={{ flex: 1, gap: 3 }}><Text style={{ fontSize: 15, fontWeight: "800", color: colors.foreground }}>Verze {CURRENT_VERSION}</Text><Text style={{ fontSize: 12, lineHeight: 17, color: colors.muted }}>{update ? `Je dostupná nová verze ${update.version}.` : "Zkontroluj, jestli máš nejnovější sestavení."}</Text></View></View>{installing ? <View style={{ gap: 7 }}><View style={{ height: 8, borderRadius: 4, overflow: "hidden", backgroundColor: `${colors.primary}1F` }}><View style={{ height: "100%", width: `${Math.round(updateProgress * 100)}%`, backgroundColor: colors.primary }} /></View><Text style={{ fontSize: 12, color: colors.muted }}>Stahuji aktualizaci… {Math.round(updateProgress * 100)} %</Text></View> : update ? <Pressable onPress={() => void applyUpdate(update)} style={({ pressed }) => [{ minHeight: 46, borderRadius: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: colors.primary, transform: [{ scale: pressed ? 0.97 : 1 }], opacity: pressed ? 0.9 : 1 }]}><MaterialIcons name="download" size={18} color="#141317" /><Text style={{ color: "#141317", fontSize: 14, fontWeight: "900" }}>Aktualizovat na {update.version}</Text></Pressable> : <Pressable onPress={() => void runUpdateCheck()} disabled={checking} style={({ pressed }) => [{ minHeight: 46, borderRadius: 14, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderColor: colors.border, opacity: checking || pressed ? 0.65 : 1 }]}>{checking ? <ActivityIndicator size="small" color={colors.primary} /> : <MaterialIcons name="refresh" size={18} color={colors.foreground} />}<Text style={{ color: colors.foreground, fontSize: 14, fontWeight: "800" }}>{checking ? "Kontroluji…" : "Zkontrolovat aktualizace"}</Text></Pressable>}</View>
     <Pressable onPress={showLogout} style={({ pressed }) => [styles.logout, { borderColor: colors.border, opacity: pressed ? 0.65 : 1 }]}><MaterialIcons name="logout" size={20} color={colors.error} /><Text style={[styles.logoutText, { color: colors.error }]}>Odhlásit se</Text></Pressable>
   </ScrollView></ScreenContainer>;
 }

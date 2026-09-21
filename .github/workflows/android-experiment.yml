@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
@@ -60,3 +60,19 @@ jobs:
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Read app version
+        id: app-version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish update release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-v${{ steps.app-version.outputs.version }}
+          name: SongCraft Studio v${{ steps.app-version.outputs.version }}
+          body: |
+            Automatická aktualizace SongCraft Studio ${{ steps.app-version.outputs.version }}.
+            Aplikace si tuto verzi nabídne sama přímo v Nastavení (nebo po spuštění).
+          files: android/app/build/outputs/apk/release/app-release.apk
+          fail_on_unmatched_files: true
