@@ -114,14 +114,24 @@ console.log(`Renderuji 1920×1080 MP4 (efekt: ${effect})…`);
 const probe = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", `${work}/audio.mp3`]);
 const durationSeconds = Number.parseFloat(probe.stdout.trim());
 if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) await fail("Nepodařilo se zjistit délku MP3.");
+
+// Supabase Storage má limit velikosti objektu (~50 MB). Podle délky písně dopočítáme
+// video bitrate tak, aby výsledné MP4 nikdy tento limit nepřekročilo (kratší písně
+// zůstávají kvalitní, delší se automaticky mírně stlačí).
+const AUDIO_BITRATE_BPS = 160_000;
+const SIZE_BUDGET_BYTES = 48 * 1024 * 1024;
+const totalBitrateBps = Math.floor((SIZE_BUDGET_BYTES * 8) / durationSeconds);
+const videoMaxrateBps = Math.min(1_200_000, Math.max(350_000, totalBitrateBps - AUDIO_BITRATE_BPS));
+const videoMaxrateKbps = Math.round(videoMaxrateBps / 1000);
+
 await run("ffmpeg", [
   "-y", "-hide_banner", "-loglevel", "error",
   "-loop", "1", "-i", `${work}/cover`,
   "-i", `${work}/audio.mp3`,
   "-filter_complex", filterComplex,
   ...maps,
-  "-c:v", "libx264", "-tune", "stillimage", "-preset", "veryfast", "-crf", "28",
-  "-maxrate", "1200k", "-bufsize", "2400k",
+  "-c:v", "libx264", "-tune", "stillimage", "-preset", "veryfast", "-crf", "26",
+  "-maxrate", `${videoMaxrateKbps}k`, "-bufsize", `${videoMaxrateKbps * 2}k`,
   "-c:a", "aac", "-b:a", "160k", "-ar", "44100",
   "-t", durationSeconds.toFixed(2),
   "-r", String(FPS), "-movflags", "+faststart",
