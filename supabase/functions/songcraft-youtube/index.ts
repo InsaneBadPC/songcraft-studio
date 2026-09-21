@@ -36,8 +36,7 @@ Deno.serve(async (request) => {
   if (input.action === "create") {
     if (!githubToken) return json({ error: "Bezplatný renderer není správně nakonfigurován." }, 503);
     const jobId = crypto.randomUUID();
-    const videoPath = `${user.id}/videos/${jobId}.mp4`;
-    const { error: jobError } = await admin.from("sc_video_jobs").insert({ id: jobId, user_id: user.id, song_id: song.id, version_id: version.id, status: "processing", video_path: videoPath });
+    const { error: jobError } = await admin.from("sc_video_jobs").insert({ id: jobId, user_id: user.id, song_id: song.id, version_id: version.id, status: "processing", video_path: null });
     if (jobError) return json({ error: `Renderovací úlohu se nepodařilo založit: ${jobError.message}` }, 502);
     const dispatch = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/dispatches`, {
       method: "POST",
@@ -61,6 +60,8 @@ Deno.serve(async (request) => {
       if (ageMinutes > 20) return json({ status: "failed", error: "Renderer video v rozumné době nedokončil. Zkus export spustit znovu." });
       return json({ status: "processing", jobId: job.id, message: "Bezplatný renderer stále připravuje MP4." });
     }
+    const videoUrl = /^https?:\/\//i.test(job.video_path) ? job.video_path : null;
+    if (videoUrl) return json({ status: "completed", url: videoUrl });
     const signed = await admin.storage.from("songcraft").createSignedUrl(job.video_path, 3600);
     if (signed.error || !signed.data?.signedUrl) return json({ status: "failed", error: signed.error?.message || "Hotové video se nepodařilo otevřít." });
     return json({ status: "completed", url: signed.data.signedUrl });

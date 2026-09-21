@@ -1,8 +1,9 @@
 /**
  * Bezplatný renderer YouTube videa pro SongCraft Studio.
  * Spouští se v GitHub Actions: stáhne finální MP3 a cover z Supabase Storage,
- * sestaví 1920×1080 MP4 (statický obrázek + hudba + titulek) a nahraje
- * výsledek zpět do soukromého úložiště uživatele. Žádné externí placené API.
+ * sestaví 1920×1080 MP4 (statický obrázek + hudba) a hotové MP4 nahraje jako
+ * veřejný asset GitHub releasu „songcraft-videos“. V Supabase Storage žádné
+ * video nezůstává. Žádné externí placené API.
  */
 import { execFile } from "node:child_process";
 import { readFile, writeFile, unlink } from "node:fs/promises";
@@ -11,14 +12,28 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 const SUPABASE_URL = process.env.SONGCRAFT_SUPABASE_URL;
 const SERVICE_KEY = process.env.SONGCRAFT_SERVICE_ROLE_KEY;
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const JOB_ID = process.env.JOB_ID;
 const SONG_ID = process.env.SONG_ID;
 const VERSION_ID = process.env.VERSION_ID;
 const BUCKET = "songcraft";
+const RELEASE = "songcraft-videos";
+const REPO = "InsaneBadPC/songcraft-studio";
 
-if (!SUPABASE_URL || !SERVICE_KEY || !JOB_ID || !SONG_ID || !VERSION_ID) {
+if (!SUPABASE_URL || !SERVICE_KEY || !GITHUB_TOKEN || !JOB_ID || !SONG_ID || !VERSION_ID) {
   throw new Error("Chybí vstupní parametry renderu.");
 }
+
+const gh = async (url, options = {}) => {
+  const res = await fetch(url, {
+    ...options,
+    headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", ...options.headers },
+  });
+  const text = await res.text();
+  let data = null;
+  if (text) { try { data = JSON.parse(text); } catch { data = text; } }
+  return { status: res.status, data };
+};
 
 const rest = (path) => `${SUPABASE_URL}/rest/v1/${path}`;
 const headers = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" };
@@ -139,19 +154,35 @@ await run("ffmpeg", [
 ]);
 
 const videoBytes = await readFile(`${work}/video.mp4`);
-const videoPath = `${song.user_id}/videos/${JOB_ID}.mp4`;
-console.log(`Nahrávám výsledek (${(videoBytes.length / 1048576).toFixed(1)} MB) do úložiště…`);
-const uploadResponse = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${videoPath.split("/").map(encodeURIComponent).join("/")}`, {
+console.log(`Nahrávám výsledek (${(videoBytes.length / 1048576).toFixed(1)} MB) jako veřejný asset GitHub releasu…`);
+
+const apiBase = `https://api.github.com/repos/${REPO}`;
+const releaseLookup = await gh(`${apiBase}/releases/tags/${RELEASE}`);
+let releaseId = releaseLookup.status === 200 ? releaseLookup.data.id : null;
+if (!releaseId) {
+  console.log(`Release „${RELEASE}“ neexistuje, vytvářím…`);
+  const created = await gh(`${apiBase}/releases`, {
+    method: "POST",
+    body: JSON.stringify({ tag_name: RELEASE, name: "SongCraft videos", body: "Full HD MP4 skladeb vygenerované bezplatným rendererem.", draft: false, prerelease: false }),
+  });
+  if (created.status !== 201) await fail(`Vytvoření GitHub releasu selhalo: ${JSON.stringify(created.data)}`);
+  releaseId = created.data.id;
+}
+
+const assetName = `${JOB_ID}.mp4`;
+const uploadUrl = (await gh(`${apiBase}/releases/${releaseId}`)).data.upload_url;
+const assetUpload = await gh(uploadUrl.replace("{?name,label}", `?name=${assetName}`), {
   method: "POST",
-  headers: { ...headers, "Content-Type": "video/mp4", "x-upsert": "true" },
+  headers: { "Content-Type": "video/mp4", "Content-Length": String(videoBytes.length) },
   body: videoBytes,
 });
-if (!uploadResponse.ok) await fail(`Nahrání videa selhalo: ${await uploadResponse.text()}`);
+if (assetUpload.status !== 201) await fail(`Nahrání videa na GitHub selhalo: ${JSON.stringify(assetUpload.data)}`);
 
+const videoUrl = `https://github.com/${REPO}/releases/download/${RELEASE}/${assetName}`;
 const finalize = await fetch(`${rest("sc_video_jobs")}?id=eq.${JOB_ID}`, {
   method: "PATCH",
   headers,
-  body: JSON.stringify({ status: "completed", video_path: videoPath, error: null, updated_at: new Date().toISOString() }),
+  body: JSON.stringify({ status: "completed", video_path: videoUrl, error: null, updated_at: new Date().toISOString() }),
 });
 if (!finalize.ok) await fail(`Výsledek se nepodařilo zapsat: ${await finalize.text()}`);
 
