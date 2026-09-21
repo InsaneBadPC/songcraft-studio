@@ -62,8 +62,6 @@ const downloadTo = async (url, destination) => {
   await writeFile(destination, Buffer.from(await response.arrayBuffer()));
 };
 
-const safeTitle = (song.title ?? "Skladba").replace(/["'\\\\:]/g, "").slice(0, 150);
-
 const audioPath = version.tagged_storage_path || version.storage_path;
 const work = "/tmp/songcraft-render";
 await run("mkdir", ["-p", work]);
@@ -71,12 +69,8 @@ console.log("Stahuji cover a MP3…");
 await downloadTo(await signed(coverPath), `${work}/cover`);
 await downloadTo(await signed(audioPath), `${work}/audio.mp3`);
 
-// Titulek do samostatného souboru, aby nevadily uvozovky ani diakritika.
-await writeFile(`${work}/title.txt`, `Temney\n${safeTitle}`);
-
 const EFFECTS = ["static", "zoom", "wave", "zoom_wave", "blur"];
 const effect = EFFECTS.includes(process.env.EFFECT) ? process.env.EFFECT : "zoom_wave";
-const FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
 const FPS = 12;
 const withWaves = effect === "wave" || effect === "zoom_wave";
 
@@ -102,17 +96,15 @@ if (effect === "blur") {
   baseChain = "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black";
 }
 
-const titlePosition = withWaves ? "y=64" : "y=h-text_h-70";
-const titled = `${baseChain},drawtext=fontfile=${FONT}:textfile=/tmp/songcraft-render/title.txt:fontcolor=white:borderw=3:bordercolor=black:line_spacing=14:fontsize=52:x=(w-text_w)/2:${titlePosition}`;
-
+// Bez textových nápisů – ve videu zůstane jen cover s efektem a (volitelně) waveform.
 let filterComplex;
 let maps;
 if (withWaves) {
-  // Audio-reaktivní waveform pruk dole nad titulkem.
-  filterComplex = `${titled}[base];[1:a]asplit=2[aw][ws];[ws]showwaves=s=1920x170:mode=cline:colors=#E39A5B@0.85:rate=${FPS}[wv];[base][wv]overlay=x=0:y=H-h-34,format=yuv420p[v]`;
+  // Audio-reaktivní waveform pruk dole.
+  filterComplex = `${baseChain}[base];[1:a]asplit=2[aw][ws];[ws]showwaves=s=1920x170:mode=cline:colors=#E39A5B@0.85:rate=${FPS}[wv];[base][wv]overlay=x=0:y=H-h-34,format=yuv420p[v]`;
   maps = ["-map", "[v]", "-map", "[aw]"];
 } else {
-  filterComplex = `${titled},format=yuv420p[v]`;
+  filterComplex = `${baseChain},format=yuv420p[v]`;
   maps = ["-map", "[v]", "-map", "1:a"];
 }
 
@@ -153,5 +145,5 @@ const finalize = await fetch(`${rest("sc_video_jobs")}?id=eq.${JOB_ID}`, {
 });
 if (!finalize.ok) await fail(`Výsledek se nepodařilo zapsat: ${await finalize.text()}`);
 
-await Promise.all([unlink(`${work}/cover`), unlink(`${work}/audio.mp3`), unlink(`${work}/title.txt`), unlink(`${work}/video.mp4`)]);
+await Promise.all([unlink(`${work}/cover`), unlink(`${work}/audio.mp3`), unlink(`${work}/video.mp4`)]);
 console.log("Hotovo.");
