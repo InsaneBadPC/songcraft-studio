@@ -12,8 +12,11 @@ Legenda: `[ ]`=todo, `[~]`=v běhu, `[x]`=done.
 - [ ] V hlavním repu na větvi `dev/ai-manager-studio` (hotovo — vetev existuje).
 - [ ] Převézt migraci `20260922000000_temney_agent_v3.sql` do `supabase/migrations/` hlavního repa.
 - [ ] Rozšířit `agent_videos`: sloupce `mode`, `backend`, `audio_storage_path`, `prompt_used`, `output_path`.
-- [ ] Rozšířit `agent_image_assets`: `for_album boolean`, `render_url text`.
+- [ ] Rozšířit `agent_image_assets`: `for_album boolean`, `render_url text`, `variant_label text`.
 - [ ] Nová tabulka `agent_media_uploads` (kind, storage_path, mime, byte_size, conversation_id, song_id).
+- [ ] Nová tabulka `agent_channel_stats` (denní agregát kanálu: views, watch_time, subs, CTR, avg_view_duration, traffic_source).
+- [ ] Rozšířit `agent_recommendations`: `expected_impact`, `metric` (ctr|retention|long_watch_time|subs|engagement), `deadline_at`, `linked_publication_id`, `outcome`.
+- [ ] Nová tabulka `agent_content_calendar` (planned_date, format long|short|community|release, song_id, publication_id, status).
 - [ ] Přidat secrets: GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, YOUTUBE_CLIENT_ID/SECRET, VIDEO_VM_ENDPOINT, VIDEO_VM_BASIC_AUTH, R2_* (server-side).
 - [ ] Nakopírovat prototyp: orchestrator, video-renderer-dispatch, youtube-publish, youtube-sync-stats, `workers/video-renderer/worker.mjs`, `lib/temney-agent.ts`, workflow `sync-youtube-stats`.
 - [ ] `supabase db push` bez chyb; funkce deploynuté.
@@ -53,12 +56,15 @@ Legenda: `[ ]`=todo, `[~]`=v běhu, `[x]`=done.
 - [ ] youtube-sync-stats denní cron.
 - [ ] Konektory Spotify/TikTok: placeholdery + credentials tabulky (prototyp).
 
-## Fáze 5 — Playbook / hudební manažer
+## Fáze 5 — Manažerská vrstva (diagnostika + strategie + learning loop)
 
-- [ ] MUSIC_MANAGER_GUIDE v orchestratoru.
-- [ ] analyze_trends z youtube_stats → doporučení.
-- [ ] Návrhy názvů/thumbnailů (A/B) v agent_recommendations.
-- [ ] Release plánovačka (pre-save, teasery, playlisty).
+- [ ] Vložit MUSIC_MANAGER_GUIDE do system promptu orchest rátoru (sekce 6 plánu: persona, algoritmus 2026, operating model).
+- [ ] Tooly diagnostiky: `get_channel_stats`, `get_video_performance`, `audit_channel_health`, `analyze_trends`.
+- [ ] Tooly strategie: `plan_release` (8týdenní kampaň), `create_content_calendar` (long 1×/2–4 týdny + Shorts 2–3×/týden), `set_strategy_prefs`.
+- [ ] Tooly loopu: `track_outcome`, `weekly_report`.
+- [ ] `generate_thumbnail_concepts` → 2–3 A/B varianty + návrh testu (Test & Compare).
+- [ ] Kadence respektuje preferred_publish_hour (peak 30 min před aktivitou publika) a agent_content_calendar.
+- [ ] Learning loop: track_outcome porovnává metriky před/po; weekly_report vstupuje do agent_recommendations.
 
 ## Fáze 6 — Nasazení, testy, docs
 
@@ -78,5 +84,6 @@ Legenda: `[ ]`=todo, `[~]`=v běhu, `[x]`=done.
 - [ ] Artwork 1:1 alb + 16:9 písní → cover_path.
 - [ ] Video 3 režimy → ready → MP4 v chatu.
 - [ ] Publikace draft→confirmed→published na reálné kanálu TEMNEY.
-- [ ] Doporučení manažera → accept/reject.
+- [ ] Manažerská vrstva: audit_channel_health, plan_release, create_content_calendar, track_outcome funkční; doporučení s měřitelným KPI → accept/reject.
+- [ ] Playbook MUSIC_MANAGER_GUIDE vložen a dodržuje se (nikdy netvrdí úspěch bez success; konfirmace pro veřejné akce).
 - [ ] Testy green, nasazení funkční, docs aktuální.
