@@ -91,10 +91,29 @@ function dashAuth() {
  * POST /api/generate → vytvoří job na dashboardu. Vrací {run_id,...}.
  * mode: image_animation | full_scenes
  */
+/** Podle magic bytů určí příponu obrázku (fail-closed: neznámý formát → png). */
+function sniffImageExtension(buffer) {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "jpg";
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return "png";
+  }
+  if (
+    buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+    buffer.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return "webp";
+  }
+  return "png";
+}
+
 async function dashGenerate(mode, audio, image, title, prompt) {
   const form = new FormData();
   form.append("audio", new Blob([await readFile(audio)], { type: "audio/mpeg" }), "audio.mp3");
-  if (image) form.append("image", new Blob([await readFile(image)], { type: "image/jpeg" }), "artwork.jpg");
+  if (image) {
+    const ext = sniffImageExtension(await readFile(image));
+    form.append("image", new Blob([await readFile(image)], { type: `image/${ext === "jpg" ? "jpeg" : ext}` }), `artwork.${ext}`);
+  }
   form.append("prompt", prompt || "");
   form.append("title", title || "Temney");
   form.append("mode", mode);
@@ -136,18 +155,27 @@ async function processJob(job) {
       coverStoragePath = ownedPath(job.user_id, albums?.[0]?.cover_path);
     }
     const audio = path.join(work, "audio.mp3");
-    const artwork = path.join(work, "artwork.jpg");
+    const artworkRaw = path.join(work, "artwork.raw");
     const output = path.join(work, "render.mp4");
     await download(await signed(audioStoragePath), audio);
-    await download(await signed(coverStoragePath), artwork);
+    await download(await signed(coverStoragePath), artworkRaw);
+    // Skutečný typ obrázku určíme z magic bytů: ffmpeg i dashboard dostávají
+    // správnou příponu a MIME, jinak se JPEG failuje jako PNG.
+    const artwork = path.join(work, `artwork.${sniffImageExtension(await readFile(artworkRaw))}`);
+    if (artwork !== artworkRaw) await writeFile(artwork, await readFile(artworkRaw));
+    await rm(artworkRaw, { force: true });
 
     const type = job.mode || job.type || "static_cover";
     if (type === "static_cover") {
-      // === větev A: statický cover (lokální ffmpeg, chování beze změny) ===
+      // === větev A: statický cover (lokální ffmpeg) ===
+      // Pozor na filtry: `format` je samostatný filtr, musí být oddělený čárkou
+      // (jinak ffmpeg hlásí "Option not found" na crop) a před ním musí být
+      // scale, aby cover nebyl oříznutý (16:9 z plného obrázku).
       await exec("ffmpeg", [
         "-y", "-loop", "1", "-i", artwork, "-i", audio,
-        "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720:format=yuv420p",
-        "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac", "-b:a", "192k", "-shortest", output,
+        "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,format=yuv420p",
+        "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "192k", "-shortest", output,
       ]);
     } else if (type === "image_animation" || type === "full_scenes") {
       // === větve B/C: dashboard pipeline (Oracle localhost, Wan 2.2 I2V / scény) ===
