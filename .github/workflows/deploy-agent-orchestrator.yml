@@ -51,5 +51,9 @@ jobs:
             "SONGCRAFT_SERVICE_ROLE_KEY=$SONGCRAFT_SERVICE_ROLE_KEY" \
             "GOOGLE_AI_STUDIO_KEY=$GOOGLE_AI_STUDIO_KEY"
 
+      - name: Verify Edge Function secret names
+        run: |
+          supabase secrets list --project-ref "$SUPABASE_PROJECT_ID" --output json
+
       - name: Deploy agent orchestrator
         run: supabase functions deploy agent-orchestrator --project-ref "$SUPABASE_PROJECT_ID"
