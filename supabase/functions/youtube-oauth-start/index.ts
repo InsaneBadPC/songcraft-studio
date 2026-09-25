@@ -29,7 +29,8 @@ Deno.serve(async (request) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SONGCRAFT_SERVICE_ROLE_KEY");
   const clientId = Deno.env.get("YOUTUBE_CLIENT_ID");
   const redirectUri = Deno.env.get("YOUTUBE_REDIRECT_URI");
-  if (!authorization || !url || !anonKey || !serviceKey || !clientId || !redirectUri) return json({ error: "YouTube OAuth není nakonfigurováno." }, 503);
+  if (!url || !anonKey || !serviceKey || !clientId || !redirectUri) return json({ error: "YouTube OAuth není nakonfigurováno." }, 503);
+  if (!authorization) return json({ error: "Chybí přihlášení." }, 401);
 
   const auth = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } });
   const { data: { user }, error: authError } = await auth.auth.getUser();

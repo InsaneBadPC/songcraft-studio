@@ -22,7 +22,8 @@ Deno.serve(async (request) => {
   const authorization = request.headers.get("Authorization");
   const url = Deno.env.get("SUPABASE_URL") || Deno.env.get("SONGCRAFT_SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SONGCRAFT_SUPABASE_ANON_KEY");
-  if (!authorization || !url || !anonKey) return json({ error: "Chybí přihlášení nebo konfigurace." }, 503);
+  if (!url || !anonKey) return json({ error: "Chybí konfigurace serveru (SUPABASE_URL / SUPABASE_ANON_KEY)." }, 503);
+  if (!authorization) return json({ error: "Chybí přihlášení." }, 401);
 
   const auth = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } });
   const { data: { user }, error: authError } = await auth.auth.getUser();
