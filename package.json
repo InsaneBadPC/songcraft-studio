@@ -13,7 +13,7 @@
     "lint": "expo lint",
     "format": "prettier --write .",
     "test": "vitest run",
-    "test:live": "vitest run tests/assistant-edge-function.test.ts tests/cover-function.integration.test.ts tests/google-ai-key.test.ts tests/private-accounts.test.ts tests/supabase-service-role.test.ts",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "security:check": "node scripts/security-boundary-check.mjs",
     "security:report": "node scripts/security-boundary-check.mjs --report",
     "smoke:structure": "node scripts/production-smoke-check.mjs",
