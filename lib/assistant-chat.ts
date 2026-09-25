@@ -1,14 +1,14 @@
-import { supabase } from "@/lib/supabase";
+import { askSongCraftAgent } from "@/lib/agent-api";
 import { createAssistantRequest, type AssistantHistoryMessage } from "./assistant-chat-payload";
 
 export type StudioAssistantMessage = AssistantHistoryMessage;
 export { createAssistantRequest } from "./assistant-chat-payload";
 
-export async function askStudioAssistant(message: string, history: StudioAssistantMessage[]) {
-  const payload = createAssistantRequest(message, history);
-  const { data, error } = await supabase.functions.invoke("songcraft-studio-assistant", { body: payload });
-  if (error) throw new Error(error.message || "Asistent nyní není dostupný.");
-  const answer = (data as { answer?: unknown } | null)?.answer;
-  if (typeof answer !== "string" || !answer.trim()) throw new Error("Asistent nevrátil odpověď.");
-  return answer.trim();
+/**
+ * Backwards-compatible string helper for older screens. New UI code can use
+ * askSongCraftAgent directly when it needs pending confirmations.
+ */
+export async function askStudioAssistant(message: string, history: StudioAssistantMessage[], conversationId?: string | null) {
+  const result = await askSongCraftAgent(message, history, conversationId);
+  return result.answer;
 }

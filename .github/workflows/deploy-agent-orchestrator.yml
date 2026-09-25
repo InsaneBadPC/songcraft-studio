@@ -6,9 +6,12 @@ on:
       - dev/ai-manager-studio
       - main
     paths:
-      - "supabase/functions/agent-orchestrator/**"
+      - "supabase/functions/**"
       - "supabase/migrations/**"
+      - "workers/video-renderer/**"
       - ".github/workflows/deploy-agent-orchestrator.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
   workflow_dispatch:
 
 permissions:
@@ -22,7 +25,7 @@ jobs:
   deploy:
     name: Deploy agent orchestrator
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_ID: ${{ vars.SUPABASE_PROJECT_ID }}
@@ -30,6 +33,14 @@ jobs:
       SONGCRAFT_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
       SONGCRAFT_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       GOOGLE_AI_STUDIO_KEY: ${{ secrets.GOOGLE_AI_STUDIO_KEY }}
+      YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+      YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+      YOUTUBE_REDIRECT_URI: ${{ secrets.YOUTUBE_REDIRECT_URI }}
+      SONGCRAFT_APP_REDIRECT_URL: ${{ secrets.SONGCRAFT_APP_REDIRECT_URL }}
+      SONGCRAFT_ALLOWED_USER_IDS: ${{ secrets.SONGCRAFT_ALLOWED_USER_IDS }}
+      SONGCRAFT_ALLOWED_EMAILS: ${{ secrets.SONGCRAFT_ALLOWED_EMAILS }}
+      SYNC_STATS_CRON_SECRET: ${{ secrets.SYNC_STATS_CRON_SECRET }}
+      PUBLISH_SCHEDULER_SECRET: ${{ secrets.PUBLISH_SCHEDULER_SECRET }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -39,14 +50,30 @@ jobs:
         with:
           version: 2.117.0
 
-      - name: Synchronize render-mode constraint
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Preflight legacy storage paths
+        run: node scripts/apply-migrations.mjs --preflight
+
+      - name: Apply pending migrations
+        run: node scripts/apply-migrations.mjs --apply-all
+
+      - name: Validate migration source
         run: |
-          curl --fail-with-body --silent --show-error --retry 3 \
-            -X POST "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/database/query" \
-            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            -H "Content-Type: application/json" \
-            --data-binary @<(python -c 'import json,sys; print(json.dumps({"query": open(sys.argv[1]).read()}))' supabase/migrations/20260925000000_agent_video_render_types.sql) \
-            --output /dev/null
+          test -s supabase/config.toml
+          test -s supabase/migrations/20260925000000_agent_video_render_types.sql
+          test -s supabase/migrations/20260925010000_agent_security_hardening.sql
+          test -s supabase/migrations/20260925110000_core_schema_bootstrap.sql
+          test -s supabase/migrations/20260925120000_core_schema_completion.sql
+          test -s supabase/migrations/20260925130000_agent_confirmations.sql
+          test -s supabase/migrations/20260925140000_video_worker_leases.sql
+          test -s supabase/migrations/20260925150000_youtube_oauth_states.sql
+          test -s supabase/migrations/20260925160000_publication_server_only.sql
+          test -s supabase/migrations/20260925170000_core_storage_paths.sql
+          echo "Migration source is present; apply with the reviewed Supabase migration runbook."
 
       - name: Configure Edge Function secrets
         run: |
@@ -55,19 +82,51 @@ jobs:
           test -n "$SONGCRAFT_SUPABASE_ANON_KEY"
           test -n "$SONGCRAFT_SERVICE_ROLE_KEY"
           test -n "$GOOGLE_AI_STUDIO_KEY"
+          test -n "$YOUTUBE_CLIENT_ID"
+          test -n "$YOUTUBE_CLIENT_SECRET"
+          test -n "$YOUTUBE_REDIRECT_URI"
+          test -n "$SONGCRAFT_APP_REDIRECT_URL"
+          test -n "$SONGCRAFT_ALLOWED_USER_IDS"
+          test -n "$SONGCRAFT_ALLOWED_EMAILS"
+          test -n "$SYNC_STATS_CRON_SECRET"
+          test -n "$PUBLISH_SCHEDULER_SECRET"
           supabase secrets set --project-ref "$SUPABASE_PROJECT_ID" \
             "SONGCRAFT_SUPABASE_URL=$SONGCRAFT_SUPABASE_URL" \
             "SONGCRAFT_SUPABASE_ANON_KEY=$SONGCRAFT_SUPABASE_ANON_KEY" \
             "SONGCRAFT_SERVICE_ROLE_KEY=$SONGCRAFT_SERVICE_ROLE_KEY" \
-            "GOOGLE_AI_STUDIO_KEY=$GOOGLE_AI_STUDIO_KEY"
+            "GOOGLE_AI_STUDIO_KEY=$GOOGLE_AI_STUDIO_KEY" \
+            "YOUTUBE_CLIENT_ID=$YOUTUBE_CLIENT_ID" \
+            "YOUTUBE_CLIENT_SECRET=$YOUTUBE_CLIENT_SECRET" \
+            "YOUTUBE_REDIRECT_URI=$YOUTUBE_REDIRECT_URI" \
+            "SONGCRAFT_APP_REDIRECT_URL=$SONGCRAFT_APP_REDIRECT_URL" \
+            "SONGCRAFT_ALLOWED_USER_IDS=$SONGCRAFT_ALLOWED_USER_IDS" \
+            "SONGCRAFT_ALLOWED_EMAILS=$SONGCRAFT_ALLOWED_EMAILS" \
+            "SYNC_STATS_CRON_SECRET=$SYNC_STATS_CRON_SECRET" \
+            "PUBLISH_SCHEDULER_SECRET=$PUBLISH_SCHEDULER_SECRET"
 
       - name: Verify Edge Function secret names
         run: |
           names=$(supabase secrets list --project-ref "$SUPABASE_PROJECT_ID" --output json | jq -r '.[].name' | sort)
-          for required in SONGCRAFT_SUPABASE_URL SONGCRAFT_SUPABASE_ANON_KEY SONGCRAFT_SERVICE_ROLE_KEY GOOGLE_AI_STUDIO_KEY; do
+          for required in SONGCRAFT_SUPABASE_URL SONGCRAFT_SUPABASE_ANON_KEY SONGCRAFT_SERVICE_ROLE_KEY GOOGLE_AI_STUDIO_KEY YOUTUBE_CLIENT_ID YOUTUBE_CLIENT_SECRET YOUTUBE_REDIRECT_URI SONGCRAFT_APP_REDIRECT_URL SONGCRAFT_ALLOWED_USER_IDS SONGCRAFT_ALLOWED_EMAILS SYNC_STATS_CRON_SECRET PUBLISH_SCHEDULER_SECRET; do
             printf '%s\\n' "$names" | grep -Fxq "$required"
           done
           echo "required edge secret names present"
 
-      - name: Deploy agent orchestrator
-        run: supabase functions deploy agent-orchestrator --project-ref "$SUPABASE_PROJECT_ID"
+      - name: Deploy agent functions
+        run: |
+          supabase functions deploy agent-orchestrator --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy agent-confirm --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy songcraft-media --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy youtube-publish --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy youtube-sync-stats --project-ref "$SUPABASE_PROJECT_ID" --no-verify-jwt
+          supabase functions deploy youtube-publish-scheduler --project-ref "$SUPABASE_PROJECT_ID" --no-verify-jwt
+          supabase functions deploy youtube-oauth-start --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy youtube-oauth-callback --project-ref "$SUPABASE_PROJECT_ID" --no-verify-jwt
+          supabase functions deploy songcraft-youtube --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy video-renderer-dispatch --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy songcraft-cover-ai --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy songcraft-copywriter --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy songcraft-imports --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy songcraft-rhymes --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy songcraft-utilities --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy songcraft-studio-assistant --project-ref "$SUPABASE_PROJECT_ID"

@@ -1,5 +1,8 @@
 # SongCraft Studio — Project TODO: AI Manažer
 
+> **Kanónický produkční roadmap:** `docs/TODO_PRODUCTION_AI_AGENT.md`  
+> Tento historický plán ponechávám pro traceability; aktuální stav a gate patří do kanónického souboru.
+
 **Větev:** `dev/ai-manager-studio`
 **Návaznost:** velký plán v `docs/SACRED_WORK_PLAN.md` (jednotlivé fáze a detaily).
 

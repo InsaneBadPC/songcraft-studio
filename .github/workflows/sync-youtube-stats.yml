@@ -12,10 +12,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Sync stats
+        env:
+          SYNC_STATS_CRON_SECRET: ${{ secrets.SYNC_STATS_CRON_SECRET }}
         run: |
+          test -n "$SYNC_STATS_CRON_SECRET"
           curl -sS -o - -w "\nHTTP %{http_code}\n" \
             -X POST "https://hfykngbhcxmnpxvjagoj.supabase.co/functions/v1/youtube-sync-stats" \
-            -H "Authorization: Bearer ${{ secrets.SONGCRAFT_SERVICE_ROLE_KEY }}" \
-            -H "apikey: ${{ secrets.SONGCRAFT_SERVICE_ROLE_KEY }}" \
+            -H "x-cron-secret: $SYNC_STATS_CRON_SECRET" \
             -H "Content-Type: application/json" \
             -d '{}'

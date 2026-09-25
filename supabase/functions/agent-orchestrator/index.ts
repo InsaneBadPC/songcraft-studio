@@ -3,12 +3,13 @@
 // LLM layer is provider-agnostic: providers+models are tried in order, falling back on failure.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isAllowedPrivateUser, privateAccessMessage } from "../_shared/access.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", "Content-Type": "application/json" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: cors });
 const clip = (value: unknown, max: number) => typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "";
 const CHARACTER_BIBLE = "mysterious solitary figure who grew up on the streets of the ghetto and is deeply broken by pain; worn street hoodie or beat-up jacket, worn by years of struggle; urban decay, alley, rooftop, graffiti or chain-link fence; night or dusk; muted desaturated palette with one harsh orange streetlight or cold-blue neon accent; gritty cinematic realism; face never clearly visible, always hood, silhouette, back turned, deep shadow or partial crop, pain shown through hunched posture, tattered clothing and worn environment, never a clear facial expression; clean negative space in top or bottom third for the text overlay; text overlay IS REQUIRED and must clearly read the artist name TEMNEY, the album name and the song title in readable typography; no other readable text, logo or watermark";
-const CONFIRM_REQUIRED = new Set(["publish_to_youtube", "update_existing_video", "send_comment_reply"]);
+const CONFIRM_REQUIRED = new Set(["publish_to_youtube", "update_existing_video", "send_comment_reply", "set_thumbnail"]);
 
 type Input = { message?: unknown; history?: unknown; conversationId?: unknown; autoPublish?: unknown };
 type LlmCall = { id?: string; name: string; args: Record<string, unknown>; thoughtSignature?: string };
@@ -22,10 +23,11 @@ const toolDefs = [
   { name: "list_lyric_drafts", description: "List the user's in-progress lyric drafts (sc_lyrics status draft), e.g. rozpracované texty.", parameters: { type: "object", properties: {} } },
   { name: "extract_lyric_themes", description: "Extract 3-6 visual motifs from a song lyric.", parameters: { type: "object", properties: { songId: { type: "string" } }, required: ["songId"] } },
   { name: "generate_song_artwork", description: "Generate Temney artwork from a song lyric and save it to private storage.", parameters: { type: "object", properties: { songId: { type: "string" }, aspectRatio: { type: "string", enum: ["1:1", "16:9"] }, userNote: { type: "string" } }, required: ["songId"] } },
+  { name: "make_album_artwork", description: "Generate a square 1:1 album cover and save it privately.", parameters: { type: "object", properties: { albumId: { type: "string" }, userNote: { type: "string" } }, required: ["albumId"] } },
   { name: "generate_metadata", description: "Draft YouTube title, description and tags for a song. Never publishes.", parameters: { type: "object", properties: { songId: { type: "string" } }, required: ["songId"] } },
   { name: "render_video", description: "Queue a video render from the final song audio and artwork. Three 16:9 render modes: static_cover = 1280x720 static artwork over the final audio; image_animation = image-to-video animation of the artwork over the final audio; full_scenes = full scene-based video (storyboard scenes from audio lyrics + artwork as the character reference). Returns a videoId; the agent must report the render as pending and check status later.", parameters: { type: "object", properties: { songId: { type: "string" }, type: { type: "string", enum: ["static_cover", "image_animation", "full_scenes"] }, prompt: { type: "string" } }, required: ["songId"] } },
   { name: "create_recommendation", description: "Save a strategic recommendation for the user.", parameters: { type: "object", properties: { category: { type: "string", enum: ["seo", "thumbnail", "schedule", "content", "engagement", "strategy"] }, recommendation: { type: "string" }, reasoning: { type: "string" } }, required: ["category", "recommendation"] } },
-  { name: "schedule_publication", description: "Create a private draft publication with a suggested time; never publish.", parameters: { type: "object", properties: { songId: { type: "string" }, title: { type: "string" }, scheduledAt: { type: "string" } }, required: ["songId"] } },
+  { name: "schedule_publication", description: "Create a private draft publication for a ready video with a suggested time; never publish.", parameters: { type: "object", properties: { songId: { type: "string" }, videoId: { type: "string" }, title: { type: "string" }, scheduledAt: { type: "string" } }, required: ["songId"] } },
   { name: "publish_to_youtube", description: "Publish an already prepared draft. This always becomes pending confirmation unless the server setting explicitly allows automation.", parameters: { type: "object", properties: { publicationId: { type: "string" } }, required: ["publicationId"] } },
 ];
 
@@ -61,7 +63,7 @@ async function llm(system: string, msgs: LlmMessage[], toolDefs: unknown[], with
 
 async function geminiChat(key: string, base: string, model: string, system: string, msgs: LlmMessage[], toolDefs: unknown[], withTools: boolean): Promise<LlmResult> {
   const contents = jsonifyGemini(msgs);
-  const response = await fetch(`${base}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, tools: withTools ? [{ functionDeclarations: toolDefs }] : undefined, generationConfig: { temperature: 0.55, maxOutputTokens: 1200 } }), signal: AbortSignal.timeout(90_000) });
+  const response = await fetch(`${base}/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, tools: withTools ? [{ functionDeclarations: toolDefs }] : undefined, generationConfig: { temperature: 0.55, maxOutputTokens: 1200 } }), signal: AbortSignal.timeout(90_000) });
   if (!response.ok) throw new Error(`HTTP ${response.status} ${(await response.text()).slice(0, 160)}`);
   const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string; thoughtSignature?: string; functionCall?: { name?: string; args?: Record<string, unknown> } }> } }> };
   const parts = data.candidates?.[0]?.content?.parts ?? [];
@@ -101,16 +103,141 @@ function textOf(msg: LlmMessage) { return msg.parts.filter((part): part is Extra
 
 async function row(admin: any, table: string, id: string, userId: string, select = "*") { const { data, error } = await admin.from(table).select(select).eq("id", id).eq("user_id", userId).maybeSingle(); if (error) throw new Error(error.message); if (!data) throw new Error("Položka nebyla nalezena nebo k ní nemáš přístup."); return data; }
 async function log(admin: any, userId: string, action: string, result: "success" | "error" | "pending", payload: unknown, targetId?: string, errorMessage?: string) { await admin.from("agent_action_log").insert({ user_id: userId, action_type: action, target_id: targetId ?? null, payload, result, error_message: errorMessage ?? null }); }
+const conversationUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+async function ensureConversation(admin: any, userId: string, requestedId: unknown, firstMessage: string) {
+  if (typeof requestedId === "string" && requestedId.trim()) {
+    const id = requestedId.trim();
+    if (!conversationUuid.test(id)) throw new Error("Neplatné conversationId.");
+    const { data, error } = await admin.from("agent_conversations").select("id").eq("id", id).eq("user_id", userId).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) throw new Error("Konverzace nepatří přihlášenému uživateli.");
+    return id;
+  }
+  const { data, error } = await admin.from("agent_conversations").insert({ user_id: userId, title: clip(firstMessage, 120) }).select("id").single();
+  if (error || !data) throw new Error(error?.message || "Konverzaci se nepodařilo vytvořit.");
+  return data.id as string;
+}
+async function appendConversationMessage(admin: any, userId: string, conversationId: string, role: "user" | "model", content: string) {
+  const { error } = await admin.from("agent_messages").insert({ user_id: userId, conversation_id: conversationId, role, content: { text: clip(content, 20_000) } });
+  if (error) throw new Error(error.message);
+}
+async function hashConfirmationToken(token: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+async function createPendingConfirmation(admin: any, userId: string, action: string, args: Record<string, unknown>) {
+  const publicationId = clip(args.publicationId, 80);
+  let targetId = publicationId || null;
+  let payload: Record<string, unknown> = {
+    publicationId: publicationId || null,
+    youtubeVideoId: clip(args.youtubeVideoId, 120) || null,
+    comment: clip(args.comment, 2_000) || null,
+    thumbnailPath: clip(args.thumbnailPath, 500) || null,
+  };
+
+  // Bind a publish confirmation to the exact draft metadata that the user is
+  // about to make public. The confirm endpoint rejects any later drift.
+  if (action === "publish_to_youtube") {
+    if (!publicationId) throw new Error("Chybí publicationId pro publikaci.");
+    const publication = await row(admin, "youtube_publications", publicationId, userId, "id,title,description,tags,privacy_status,video_id,status");
+    payload = {
+      publicationId,
+      title: clip(publication.title, 100),
+      description: clip(publication.description, 5_000),
+      tags: Array.isArray(publication.tags) ? publication.tags.slice(0, 15) : [],
+      privacyStatus: clip(publication.privacy_status, 20) || "private",
+    };
+  }
+
+  const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, "");
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const { data, error } = await admin.from("agent_confirmations").insert({
+    user_id: userId,
+    action,
+    target_id: targetId,
+    nonce_hash: await hashConfirmationToken(token),
+    payload,
+    status: "pending",
+    idempotency_key: crypto.randomUUID(),
+    expires_at: expiresAt,
+  }).select("id,expires_at").single();
+  if (error || !data) throw new Error(error?.message || "Potvrzení se nepodařilo připravit.");
+  return {
+    status: "pending_confirmation",
+    confirmationId: data.id,
+    confirmationToken: token,
+    expiresAt: data.expires_at,
+    message: "Akce čeká na explicitní potvrzení uživatele. Nic veřejného nebylo provedeno.",
+  };
+}
 async function dispatch(admin: any, userId: string, name: string, args: Record<string, unknown>) {
-  if (CONFIRM_REQUIRED.has(name)) { await log(admin, userId, name, "pending", args); return { status: "pending_confirmation", message: `Akce ${name} čeká na potvrzení uživatele. Nic veřejného nebylo provedeno.` }; }
+  if (CONFIRM_REQUIRED.has(name)) {
+    const confirmation = await createPendingConfirmation(admin, userId, name, args);
+    await log(admin, userId, name, "pending", { confirmationId: confirmation.confirmationId, expiresAt: confirmation.expiresAt }, args.publicationId ? String(args.publicationId) : undefined);
+    return confirmation;
+  }
   if (name === "list_songs") { let query = admin.from("sc_songs").select("id,title,cover_path,album_id,created_at,updated_at").eq("user_id", userId).order("updated_at", { ascending: false }).limit(50); const { data, error } = await query; if (error) throw new Error(error.message); const songs = (data ?? []).filter((song: any) => !args.withoutArtwork || !song.cover_path); await log(admin, userId, name, "success", { count: songs.length }); return { status: "success", count: songs.length, songs }; }
   if (name === "list_lyric_drafts") { let query = admin.from("sc_lyrics").select("id,title,status,updated_at,lyrics").eq("user_id", userId).eq("status", "draft").order("updated_at", { ascending: false }).limit(20); const { data, error } = await query; if (error) throw new Error(error.message); const drafts = data ?? []; await log(admin, userId, name, "success", { count: drafts.length }); return { status: "success", count: drafts.length, drafts }; }
   if (name === "extract_lyric_themes") { const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title,lyrics,style_prompt"); const answer = await llm(`Extract exactly 3-6 concise visual motifs for Temney from the lyric. Return only a JSON array of strings. Character bible: ${CHARACTER_BIBLE}`, [{ role: "user", parts: [{ type: "text", text: JSON.stringify({ title: song.title, style: song.style_prompt, lyrics: clip(song.lyrics, 5000) }) }] }], [], false); const text = answer.text || "[]"; try { return { themes: JSON.parse(stripFences(text)) }; } catch { return { themes: [text.slice(0, 240)] }; } }
-  if (name === "generate_song_artwork") { const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title,lyrics,style_prompt,album_id"); let albumTitle = clip(args.albumTitle, 140) || "Temney Album"; if (song.album_id) { const { data: alb } = await admin.from("sc_albums").select("name").eq("id", song.album_id).single(); if (alb?.name) albumTitle = clip(alb.name, 140); } const ratio = "16:9"; const prompt = `Temney music artwork, ${ratio} composition. ${CHARACTER_BIBLE}. Artist: TEMNEY. Album: ${clip(albumTitle, 140)}. Song title: ${clip(song.title, 140)}.  ${clip(song.style_prompt, 500)} ${clip(song.lyrics, 2400)}. Creative note: ${clip(args.userNote, 400)}.`; const asset = { user_id: userId, song_id: song.id, asset_type: "song_artwork", aspect_ratio: ratio, prompt_used: prompt, status: "generating" }; const { data: created, error: createError } = await admin.from("agent_image_assets").insert(asset).select("id").single(); if (createError) throw new Error(createError.message); const seed = crypto.randomUUID(); const sourceUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${ratio === "16:9" ? 1280 : 1024}&height=${ratio === "16:9" ? 720 : 1024}&seed=${encodeURIComponent(seed)}&nologo=true`; const image = await fetch(sourceUrl); if (!image.ok) throw new Error(`Pollinations artwork generation failed (${image.status}).`); const bytes = new Uint8Array(await image.arrayBuffer()); const path = `${userId}/agent-artwork/${song.id}-${seed}.jpg`; const { error: uploadError } = await admin.storage.from("songcraft").upload(path, bytes, { contentType: "image/jpeg", upsert: false }); if (uploadError) throw new Error(uploadError.message); await admin.from("agent_image_assets").update({ base_image_path: path, final_image_path: path, status: "ready", seed }).eq("id", created.id); await admin.from("sc_songs").update({ cover_path: path }).eq("id", song.id).eq("user_id", userId); await log(admin, userId, name, "success", { path, ratio }, song.id); return { status: "ready", assetId: created.id, storagePath: path, prompt }; }
+  if (name === "generate_song_artwork") { const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title,lyrics,style_prompt,album_id"); let albumTitle = clip(args.albumTitle, 140) || "Temney Album"; if (song.album_id) { const { data: alb } = await admin.from("sc_albums").select("name").eq("id", song.album_id).eq("user_id", userId).maybeSingle(); if (alb?.name) albumTitle = clip(alb.name, 140); } const ratio = args.aspectRatio === "1:1" ? "1:1" : "16:9"; const prompt = `Temney music artwork, ${ratio} composition. ${CHARACTER_BIBLE}. Artist: TEMNEY. Album: ${clip(albumTitle, 140)}. Song title: ${clip(song.title, 140)}.  ${clip(song.style_prompt, 500)} ${clip(song.lyrics, 2400)}. Creative note: ${clip(args.userNote, 400)}.`; const asset = { user_id: userId, song_id: song.id, asset_type: "song_artwork", aspect_ratio: ratio, prompt_used: prompt, status: "generating" }; const { data: created, error: createError } = await admin.from("agent_image_assets").insert(asset).select("id").single(); if (createError) throw new Error(createError.message); const seed = crypto.randomUUID(); const sourceUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${ratio === "16:9" ? 1280 : 1024}&height=${ratio === "16:9" ? 720 : 1024}&seed=${encodeURIComponent(seed)}&nologo=true`; const image = await fetch(sourceUrl, { signal: AbortSignal.timeout(120_000) }); if (!image.ok) throw new Error(`Pollinations artwork generation failed (${image.status}).`); const bytes = new Uint8Array(await image.arrayBuffer()); if (bytes.byteLength <= 0 || bytes.byteLength > 10 * 1024 * 1024) throw new Error("Vygenerovaný obal je neplatný nebo příliš velký."); const path = `${userId}/agent-artwork/${song.id}-${seed}.jpg`; const { error: uploadError } = await admin.storage.from("songcraft").upload(path, bytes, { contentType: "image/jpeg", upsert: false }); if (uploadError) throw new Error(uploadError.message); await admin.from("agent_image_assets").update({ base_image_path: path, final_image_path: path, status: "ready", seed }).eq("id", created.id); await admin.from("sc_songs").update({ cover_path: path }).eq("id", song.id).eq("user_id", userId); await log(admin, userId, name, "success", { path, ratio }, song.id); return { status: "ready", assetId: created.id, storagePath: path, prompt }; }
+  if (name === "make_album_artwork") {
+    const album = await row(admin, "sc_albums", String(args.albumId), userId, "id,name,description");
+    const prompt = `Temney album cover, 1:1 composition. ${CHARACTER_BIBLE}. Album: ${clip(album.name, 140)}. Description: ${clip(album.description, 600)}. Creative note: ${clip(args.userNote, 400)}. No other readable text, logo or watermark.`;
+    const asset = { user_id: userId, album_id: album.id, asset_type: "album_cover", for_album: true, aspect_ratio: "1:1", prompt_used: prompt, status: "generating" };
+    const { data: created, error: createError } = await admin.from("agent_image_assets").insert(asset).select("id").single();
+    if (createError || !created) throw new Error(createError?.message || "Album artwork se nepodařilo založit.");
+    const seed = crypto.randomUUID();
+    const sourceUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&seed=${encodeURIComponent(seed)}&nologo=true`;
+    const image = await fetch(sourceUrl, { signal: AbortSignal.timeout(120_000) });
+    if (!image.ok) throw new Error(`Album artwork generation failed (${image.status}).`);
+    const bytes = new Uint8Array(await image.arrayBuffer()); if (bytes.byteLength <= 0 || bytes.byteLength > 10 * 1024 * 1024) throw new Error("Vygenerovaný obal je neplatný nebo příliš velký.");
+    const path = `${userId}/agent-artwork/album-${album.id}-${seed}.jpg`;
+    const { error: uploadError } = await admin.storage.from("songcraft").upload(path, bytes, { contentType: "image/jpeg", upsert: false });
+    if (uploadError) throw new Error(uploadError.message);
+    const { error: updateAssetError } = await admin.from("agent_image_assets").update({ base_image_path: path, final_image_path: path, status: "ready", seed }).eq("id", created.id).eq("user_id", userId);
+    if (updateAssetError) throw new Error(updateAssetError.message);
+    const { error: updateAlbumError } = await admin.from("sc_albums").update({ cover_path: path }).eq("id", album.id).eq("user_id", userId);
+    if (updateAlbumError) throw new Error(updateAlbumError.message);
+    await log(admin, userId, name, "success", { path, ratio: "1:1" }, album.id);
+    return { status: "ready", assetId: created.id, storagePath: path, prompt };
+  }
   if (name === "generate_metadata") { const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title,lyrics,style_prompt"); const answer = await llm("Create YouTube metadata in Czech for Temney. Return JSON with title (max 100 chars), description (max 4500 chars), tags (array of max 15 short strings). No claims not supported by the input.", [{ role: "user", parts: [{ type: "text", text: JSON.stringify({ title: song.title, style: song.style_prompt, lyrics: clip(song.lyrics, 2600) }) }] }], [], false); return { draft: stripFences(answer.text || "{}") }; }
-  if (name === "render_video") { const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title"); const { data, error } = await admin.from("agent_videos").insert({ user_id: userId, song_id: song.id, type: args.type ?? "static_cover", render_status: "queued" }).select("id,render_status").single(); if (error) throw new Error(error.message); await log(admin, userId, name, "success", { type: args.type ?? "static_cover" }, data.id); return { status: "queued", videoId: data.id }; }
+  if (name === "render_video") {
+    const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title,lyrics,style_prompt");
+    const mode = ["static_cover", "image_animation", "full_scenes"].includes(String(args.type)) ? String(args.type) : "static_cover";
+    const { data: versions, error: versionError } = await admin.from("sc_audio_versions").select("id,tagged_storage_path,original_storage_path,storage_path").eq("song_id", song.id).eq("user_id", userId).eq("is_final", true).order("is_primary", { ascending: false }).order("rating", { ascending: false }).limit(1);
+    if (versionError || !versions?.[0]) throw new Error("Pro render musí být vybraná finální MP3 verze.");
+    const version = versions[0] as { tagged_storage_path?: string | null; original_storage_path?: string | null; storage_path?: string | null };
+    const audioPath = version.tagged_storage_path || version.original_storage_path || version.storage_path;
+    if (typeof audioPath !== "string" || !audioPath.startsWith(`${userId}/`) || audioPath.includes("..")) throw new Error("Finální MP3 nemá platnou cestu vlastníka.");
+    const backend = mode === "static_cover" ? "ffmpeg" : mode === "image_animation" ? "vm_image_animation" : "vm_full_scenes";
+    const renderPrompt = clip(args.prompt, 2_000) || `SongCraft video mode: ${mode}. Song: ${clip(song.title, 140)}. Style: ${clip(song.style_prompt, 600)}. Lyrics/context: ${clip(song.lyrics, 1_800)}.`;
+    const { data, error } = await admin.from("agent_videos").insert({ user_id: userId, song_id: song.id, type: mode, mode, backend, audio_storage_path: audioPath, prompt_used: renderPrompt, render_status: "queued" }).select("id,render_status,mode,backend").single();
+    if (error || !data) throw new Error(error?.message || "Render se nepodařilo založit.");
+    await log(admin, userId, name, "success", { mode, backend }, data.id);
+    return { status: "queued", videoId: data.id, mode: data.mode, backend: data.backend };
+  }
   if (name === "create_recommendation") { const { data, error } = await admin.from("agent_recommendations").insert({ user_id: userId, category: args.category ?? "strategy", recommendation: clip(args.recommendation, 2000), reasoning: clip(args.reasoning, 3000) }).select("id,status").single(); if (error) throw new Error(error.message); await log(admin, userId, name, "success", args, data.id); return data; }
-  if (name === "schedule_publication") { const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title,cover_path"); const suggested = typeof args.scheduledAt === "string" && args.scheduledAt ? args.scheduledAt : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); const { data, error } = await admin.from("youtube_publications").insert({ user_id: userId, song_id: song.id, title: clip(args.title, 100) || `Temney – ${song.title}`, thumbnail_path: song.cover_path, scheduled_at: suggested, status: "draft", privacy_status: "private" }).select("id,status,scheduled_at").single(); if (error) throw new Error(error.message); await log(admin, userId, name, "success", { scheduledAt: suggested }, data.id); return data; }
+  if (name === "schedule_publication") {
+    const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title,cover_path");
+    const requestedVideoId = clip(args.videoId, 80);
+    let videoId = requestedVideoId;
+    if (videoId) {
+      await row(admin, "agent_videos", videoId, userId, "id,song_id,render_status");
+    } else {
+      const { data: readyVideo, error: readyError } = await admin.from("agent_videos").select("id").eq("song_id", song.id).eq("user_id", userId).eq("render_status", "ready").order("created_at", { ascending: false }).limit(1);
+      if (readyError) throw new Error(readyError.message);
+      videoId = readyVideo?.[0]?.id ?? "";
+    }
+    if (!videoId) throw new Error("Před publikací je potřeba hotové video ve stavu ready.");
+    const { data: video, error: videoError } = await admin.from("agent_videos").select("id,render_status,storage_path").eq("id", videoId).eq("song_id", song.id).eq("user_id", userId).maybeSingle();
+    if (videoError || !video || video.render_status !== "ready" || !video.storage_path) throw new Error("Video není připravené k vytvoření publikace.");
+    const suggested = typeof args.scheduledAt === "string" && args.scheduledAt ? args.scheduledAt : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await admin.from("youtube_publications").insert({ user_id: userId, song_id: song.id, video_id: video.id, title: clip(args.title, 100) || `Temney – ${song.title}`, thumbnail_path: song.cover_path, scheduled_at: suggested, status: "draft", privacy_status: "private" }).select("id,status,scheduled_at,video_id").single();
+    if (error || !data) throw new Error(error?.message || "Publikace se nepodařilo vytvořit.");
+    await log(admin, userId, name, "success", { scheduledAt: suggested, videoId: video.id }, data.id);
+    return data;
+  }
   throw new Error(`Neznámý nástroj: ${name}`);
 }
 
@@ -118,8 +245,8 @@ Deno.serve(async (request) => {
   try {
     return await handle(request);
   } catch (error) {
-    const message = error instanceof Error ? error.stack || error.message : String(error);
-    return json({ error: message }, 500);
+    console.error("agent-orchestrator request failed", error instanceof Error ? error.message : String(error));
+    return json({ error: "AI manažer selhal při zpracování požadavku. Zkus to znovu." }, 500);
   }
 });
 
@@ -130,8 +257,17 @@ async function handle(request: Request): Promise<Response> {
   if (!authorization) return json({ error: "Neplatné přihlášení." }, 401);
   const url = Deno.env.get("SUPABASE_URL") || Deno.env.get("SONGCRAFT_SUPABASE_URL"); const anon = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SONGCRAFT_SUPABASE_ANON_KEY"); const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SONGCRAFT_SERVICE_ROLE_KEY");
   if (!url || !anon || !service) return json({ error: "Agent není nakonfigurovaný. Nastav Supabase secrets (SUPABASE_URL, klíče a service role klíč)." }, 503);
-  const auth = createClient(url, anon, { global: { headers: { Authorization: authorization } } }); const { data: { user }, error: authError } = await auth.auth.getUser(); if (authError || !user) return json({ error: "Neplatné přihlášení." }, 401); const admin = createClient(url, service);
+  const auth = createClient(url, anon, { global: { headers: { Authorization: authorization } } }); const { data: { user }, error: authError } = await auth.auth.getUser(); if (authError || !user) return json({ error: "Neplatné přihlášení." }, 401); if (!isAllowedPrivateUser(user, { allowedUserIds: Deno.env.get("SONGCRAFT_ALLOWED_USER_IDS") ?? undefined, allowedEmails: Deno.env.get("SONGCRAFT_ALLOWED_EMAILS") ?? undefined })) return json({ error: privateAccessMessage() }, 403); const admin = createClient(url, service);
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > 64 * 1024) return json({ error: "Požadavek agenta je příliš velký." }, 413);
   const input = await request.json().catch(() => null) as Input | null; const message = clip(input?.message, 2000); if (!message) return json({ error: "Napiš zprávu pro agenta." }, 400);
+  let conversationId: string;
+  try {
+    conversationId = await ensureConversation(admin, user.id, input?.conversationId, message);
+    await appendConversationMessage(admin, user.id, conversationId, "user", message);
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : "Konverzaci se nepodařilo připravit." }, 400);
+  }
   const system = `Jsi Temney Agent v SongCraft Studio. Odpovídej česky. Používej nástroje, když můžeš provést konkrétní bezpečný krok. Nikdy netvrď, že se akce stala, pokud nástroj nevrátil úspěch. Veřejné akce jsou vždy pending_confirmation. Character bible: ${CHARACTER_BIBLE}. Soukromá data patří pouze ověřenému user_id ${user.id}.`;
   const contents: LlmMessage[] = [...historyFrom(input ?? {}), { role: "user", parts: [{ type: "text", text: message }] }]; let finalText = ""; const pending: unknown[] = [];
   for (let step = 0; step < 6; step += 1) {
@@ -139,8 +275,14 @@ async function handle(request: Request): Promise<Response> {
     const calls = response.calls.map((call) => ({ ...call, id: call.id ?? crypto.randomUUID() })); if (response.text) finalText = response.text;
     if (!calls.length) break;
     contents.push({ role: "model", parts: calls.map((call) => ({ type: "functionCall", name: call.name, args: call.args, id: call.id, ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}) })) });
-    for (const call of calls) { const name = call.name ?? ""; try { const result = await dispatch(admin, user.id, name, call.args ?? {}); if ((result as any)?.status === "pending_confirmation") pending.push({ tool: name, ...result }); contents.push({ role: "function", parts: [{ type: "functionResponse", name, response: result, id: call.id, ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}) }] }); } catch (error) { const message = error instanceof Error ? error.message : "Nástroj selhal."; await log(admin, user.id, name, "error", call.args ?? {}, undefined, message); contents.push({ role: "function", parts: [{ type: "functionResponse", name, response: { error: message }, id: call.id, ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}) }] }); } }
+    for (const call of calls) { const name = call.name ?? ""; try { const result = await dispatch(admin, user.id, name, call.args ?? {}); if ((result as any)?.status === "pending_confirmation") pending.push({ tool: name, ...result }); const modelResult = result && typeof result === "object" ? { ...(result as Record<string, unknown>), confirmationToken: "[withheld]" } : result; contents.push({ role: "function", parts: [{ type: "functionResponse", name, response: modelResult, id: call.id, ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}) }] }); } catch (error) { const message = error instanceof Error ? error.message : "Nástroj selhal."; await log(admin, user.id, name, "error", call.args ?? {}, undefined, message); contents.push({ role: "function", parts: [{ type: "functionResponse", name, response: { error: message }, id: call.id, ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}) }] }); } }
   }
   if (!finalText) finalText = "Úkol jsem zpracoval, ale agent nevrátil textové shrnutí."; if (pending.length) finalText += `\n\nČeká na potvrzení:\n${pending.map((item: any) => `• ${item.tool}`).join("\n")}`;
-  return json({ answer: finalText, pending });
+  try {
+    await appendConversationMessage(admin, user.id, conversationId, "model", finalText);
+    await admin.from("agent_conversations").update({ title: clip(message, 120), updated_at: new Date().toISOString() }).eq("id", conversationId).eq("user_id", user.id);
+  } catch (error) {
+    await log(admin, user.id, "conversation_persist", "error", {}, conversationId, error instanceof Error ? error.message : "Persistence konverzace selhala.");
+  }
+  return json({ answer: finalText, pending, conversationId });
 }

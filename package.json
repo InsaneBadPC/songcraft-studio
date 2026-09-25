@@ -1,5 +1,5 @@
 {
-  "name": "app-template",
+  "name": "songcraft-studio",
   "version": "2.9.1",
   "private": true,
   "main": "expo-router/entry",
@@ -13,7 +13,13 @@
     "lint": "expo lint",
     "format": "prettier --write .",
     "test": "vitest run",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "test:live": "vitest run tests/assistant-edge-function.test.ts tests/cover-function.integration.test.ts tests/google-ai-key.test.ts tests/private-accounts.test.ts tests/supabase-service-role.test.ts",
+    "security:check": "node scripts/security-boundary-check.mjs",
+    "security:report": "node scripts/security-boundary-check.mjs --report",
+    "smoke:structure": "node scripts/production-smoke-check.mjs",
+    "db:push": "supabase db push",
+    "db:diff": "supabase db diff --schema public",
+    "db:reset": "supabase db reset",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "qr": "node scripts/generate_qr.mjs"

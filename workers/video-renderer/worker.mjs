@@ -35,6 +35,7 @@ const bucket = "songcraft";
 const workRoot = process.env.WORK_DIR || "/tmp";
 const interval = Number(process.env.WORKER_INTERVAL_MS || 30000);
 const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES || 45 * 1024 * 1024);
+const maxDownloadBytes = Number(process.env.MAX_DOWNLOAD_BYTES || 64 * 1024 * 1024);
 if (!url || !key) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
 
 const headers = { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
@@ -50,10 +51,20 @@ async function signed(pathname) {
   const result = await request(`${url}/storage/v1/object/sign/${bucket}/${encoded}`, { method: "POST", body: JSON.stringify({ expiresIn: 900 }) });
   return `${url}/storage/v1${result.signedURL}`;
 }
+function ownedPath(userId, pathname) {
+  if (typeof pathname !== "string" || !pathname || pathname.length > 1024 || pathname.includes("\\") || pathname.includes("..") || pathname.startsWith("/") || !pathname.startsWith(`${userId}/`)) {
+    throw new Error("Storage path does not belong to the job owner");
+  }
+  return pathname;
+}
 async function download(file, target, extraHeaders = {}) {
-  const response = await fetch(file, { headers: extraHeaders });
+  const response = await fetch(file, { headers: extraHeaders, signal: AbortSignal.timeout(120_000) });
   if (!response.ok) throw new Error(`Download failed ${response.status}`);
-  await writeFile(target, Buffer.from(await response.arrayBuffer()));
+  const declaredLength = Number(response.headers.get("content-length") || 0);
+  if (declaredLength > maxDownloadBytes) throw new Error(`Download exceeds the configured limit (${declaredLength} bytes)`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.byteLength <= 0 || bytes.byteLength > maxDownloadBytes) throw new Error("Downloaded file has an invalid size");
+  await writeFile(target, bytes);
 }
 
 /** Supabase upload limit je 50 MiB; před uploadem bezpečně zmenší př oversized MP4. */
@@ -114,18 +125,23 @@ async function processJob(job) {
   const work = path.join(workRoot, `temney-${job.id}`);
   await mkdir(work, { recursive: true });
   try {
-    const songs = await request(api("sc_songs", `?select=id,title,cover_path&id=eq.${encodeURIComponent(job.song_id)}&user_id=eq.${encodeURIComponent(job.user_id)}`));
+    const songs = await request(api("sc_songs", `?select=id,title,cover_path,album_id&id=eq.${encodeURIComponent(job.song_id)}&user_id=eq.${encodeURIComponent(job.user_id)}`));
     const song = songs?.[0]; if (!song) throw new Error("Song not found");
-    const versions = await request(api("sc_audio_versions", `?select=storage_path,is_final,is_primary&song_id=eq.${encodeURIComponent(job.song_id)}&user_id=eq.${encodeURIComponent(job.user_id)}&order=is_final.desc,is_primary.desc&limit=1`));
+    const versions = await request(api("sc_audio_versions", `?select=id,storage_path,original_storage_path,tagged_storage_path,is_final,is_primary,rating&song_id=eq.${encodeURIComponent(job.song_id)}&user_id=eq.${encodeURIComponent(job.user_id)}&is_final=eq.true&order=is_primary.desc,rating.desc&limit=1`));
     const version = versions?.[0]; if (!version) throw new Error("No final audio version");
-    if (!song.cover_path) throw new Error("No artwork");
+    const audioStoragePath = ownedPath(job.user_id, version.tagged_storage_path || version.original_storage_path || version.storage_path);
+    let coverStoragePath = ownedPath(job.user_id, song.cover_path);
+    if (!coverStoragePath && song.album_id) {
+      const albums = await request(api("sc_albums", `?select=cover_path&id=eq.${encodeURIComponent(song.album_id)}&user_id=eq.${encodeURIComponent(job.user_id)}`));
+      coverStoragePath = ownedPath(job.user_id, albums?.[0]?.cover_path);
+    }
     const audio = path.join(work, "audio.mp3");
     const artwork = path.join(work, "artwork.jpg");
     const output = path.join(work, "render.mp4");
-    await download(await signed(version.storage_path), audio);
-    await download(await signed(song.cover_path), artwork);
+    await download(await signed(audioStoragePath), audio);
+    await download(await signed(coverStoragePath), artwork);
 
-    const type = job.type || "static_cover";
+    const type = job.mode || job.type || "static_cover";
     if (type === "static_cover") {
       // === větev A: statický cover (lokální ffmpeg, chování beze změny) ===
       await exec("ffmpeg", [
@@ -136,7 +152,7 @@ async function processJob(job) {
     } else if (type === "image_animation" || type === "full_scenes") {
       // === větve B/C: dashboard pipeline (Oracle localhost, Wan 2.2 I2V / scény) ===
       const mode = type === "image_animation" ? "image_animation" : "full_scenes";
-      const record = await dashGenerate(mode, audio, artwork, song.title, job.prompt || "");
+      const record = await dashGenerate(mode, audio, artwork, song.title, job.prompt_used || "");
       await dashPoll(record.run_id);
       await download(`${dashboardUrl}/api/runs/${record.run_id}/download`, output, { Authorization: dashAuth() });
     } else {
@@ -149,23 +165,36 @@ async function processJob(job) {
     const uploadPath = outputPath.split("/").map(encodeURIComponent).join("/");
     const upload = await fetch(`${url}/storage/v1/object/${bucket}/${uploadPath}`, { method: "POST", headers: { ...headers, "Content-Type": "video/mp4", "x-upsert": "true" }, body: bytes });
     if (!upload.ok) throw new Error(`Upload failed ${upload.status}: ${await upload.text()}`);
-    await request(api("agent_videos", `?id=eq.${job.id}&user_id=eq.${job.user_id}`), { method: "PATCH", body: JSON.stringify({ render_status: "ready", storage_path: outputPath }) });
+    await request(api("agent_videos", `?id=eq.${job.id}&user_id=eq.${job.user_id}`), { method: "PATCH", body: JSON.stringify({ render_status: "ready", storage_path: outputPath, output_path: outputPath, error_message: null, lease_expires_at: null }) });
     console.log(`[ready] ${job.id} (${type})`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await request(api("agent_videos", `?id=eq.${job.id}&user_id=eq.${job.user_id}`), { method: "PATCH", body: JSON.stringify({ render_status: "failed", error_message: message.slice(0, 1000) }) }).catch(() => {});
-    console.error(`[failed] ${job.id}: ${message}`);
+    const attempt = Number(job.attempt_count || 0);
+    const maxAttempts = Number(job.max_attempts || 3);
+    const retry = attempt < maxAttempts;
+    await request(api("agent_videos", `?id=eq.${job.id}&user_id=eq.${job.user_id}`), { method: "PATCH", body: JSON.stringify({ render_status: retry ? "queued" : "failed", lease_expires_at: null, error_message: message.slice(0, 1000) }) }).catch(() => {});
+    console.error(`[${retry ? "retry" : "failed"}] ${job.id} (${attempt}/${maxAttempts}): ${message}`);
   } finally {
     await rm(work, { recursive: true, force: true });
   }
 }
 
 async function tick() {
-  const jobs = await request(api("agent_videos", "?select=id,user_id,song_id,type&render_status=eq.queued&order=created_at.asc&limit=1"));
+  const now = new Date();
+  const staleBefore = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
+  await request(api("agent_videos", `?render_status=eq.rendering&or=(lease_expires_at.is.null,lease_expires_at.lt.${encodeURIComponent(staleBefore)})`), { method: "PATCH", body: JSON.stringify({ render_status: "queued", lease_expires_at: null, error_message: "Worker lease expired; job was requeued." }) }).catch(() => {});
+
+  const jobs = await request(api("agent_videos", "?select=id,user_id,song_id,type,mode,backend,prompt_used,attempt_count,max_attempts,lease_expires_at&render_status=eq.queued&order=created_at.asc&limit=1"));
   const job = jobs?.[0]; if (!job) return;
-  const claimed = await request(api("agent_videos", `?id=eq.${job.id}&render_status=eq.queued`), { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ render_status: "rendering" }) });
+  const attempt = Number(job.attempt_count || 0) + 1;
+  const maxAttempts = Number(job.max_attempts || 3);
+  if (attempt > maxAttempts) {
+    await request(api("agent_videos", `?id=eq.${encodeURIComponent(job.id)}&user_id=eq.${encodeURIComponent(job.user_id)}`), { method: "PATCH", body: JSON.stringify({ render_status: "failed", error_message: "Maximum render attempts exceeded.", lease_expires_at: null }) });
+    return;
+  }
+  const claimed = await request(api("agent_videos", `?id=eq.${encodeURIComponent(job.id)}&user_id=eq.${encodeURIComponent(job.user_id)}&render_status=eq.queued`), { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ render_status: "rendering", attempt_count: attempt, lease_expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(), error_message: null }) });
   const ok = Array.isArray(claimed) && claimed.length > 0;
-  if (ok) await processJob({ ...job });
+  if (ok) await processJob({ ...job, attempt_count: attempt, max_attempts: maxAttempts, mode: claimed[0].mode || job.mode, backend: claimed[0].backend || job.backend, prompt_used: claimed[0].prompt_used || job.prompt_used });
 }
 
 console.log(`Temney renderer ready; interval ${interval}ms; dashboard ${dashboardUrl}`);
