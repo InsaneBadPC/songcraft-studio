@@ -38,6 +38,15 @@ jobs:
         with:
           version: 2.117.0
 
+      - name: Synchronize render-mode constraint
+        run: |
+          curl --fail-with-body --silent --show-error --retry 3 \
+            -X POST "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @<(python -c 'import json,sys; print(json.dumps({"query": open(sys.argv[1]).read()}))' supabase/migrations/20260925000000_agent_video_render_types.sql) \
+            --output /dev/null
+
       - name: Configure Edge Function secrets
         run: |
           test -n "$SUPABASE_PROJECT_ID"
