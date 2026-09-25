@@ -126,8 +126,10 @@ Deno.serve(async (request) => {
 async function handle(request: Request): Promise<Response> {
   if (request.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (request.method !== "POST") return json({ error: "Použij POST." }, 405);
-  const authorization = request.headers.get("Authorization"); const url = Deno.env.get("SUPABASE_URL") || Deno.env.get("SONGCRAFT_SUPABASE_URL"); const anon = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SONGCRAFT_SUPABASE_ANON_KEY"); const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SONGCRAFT_SERVICE_ROLE_KEY");
-  if (!authorization || !url || !anon || !service) return json({ error: "Agent není nakonfigurovaný. Nastav Supabase secrets (SUPABASE_URL, klíče a service role klíč)." }, 503);
+  const authorization = request.headers.get("Authorization");
+  if (!authorization) return json({ error: "Neplatné přihlášení." }, 401);
+  const url = Deno.env.get("SUPABASE_URL") || Deno.env.get("SONGCRAFT_SUPABASE_URL"); const anon = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SONGCRAFT_SUPABASE_ANON_KEY"); const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SONGCRAFT_SERVICE_ROLE_KEY");
+  if (!url || !anon || !service) return json({ error: "Agent není nakonfigurovaný. Nastav Supabase secrets (SUPABASE_URL, klíče a service role klíč)." }, 503);
   const auth = createClient(url, anon, { global: { headers: { Authorization: authorization } } }); const { data: { user }, error: authError } = await auth.auth.getUser(); if (authError || !user) return json({ error: "Neplatné přihlášení." }, 401); const admin = createClient(url, service);
   const input = await request.json().catch(() => null) as Input | null; const message = clip(input?.message, 2000); if (!message) return json({ error: "Napiš zprávu pro agenta." }, 400);
   const system = `Jsi Temney Agent v SongCraft Studio. Odpovídej česky. Používej nástroje, když můžeš provést konkrétní bezpečný krok. Nikdy netvrď, že se akce stala, pokud nástroj nevrátil úspěch. Veřejné akce jsou vždy pending_confirmation. Character bible: ${CHARACTER_BIBLE}. Soukromá data patří pouze ověřenému user_id ${user.id}.`;

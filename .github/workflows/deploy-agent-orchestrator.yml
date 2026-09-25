@@ -53,7 +53,11 @@ jobs:
 
       - name: Verify Edge Function secret names
         run: |
-          supabase secrets list --project-ref "$SUPABASE_PROJECT_ID" --output json
+          names=$(supabase secrets list --project-ref "$SUPABASE_PROJECT_ID" --output json | jq -r '.[].name' | sort)
+          for required in SONGCRAFT_SUPABASE_URL SONGCRAFT_SUPABASE_ANON_KEY SONGCRAFT_SERVICE_ROLE_KEY GOOGLE_AI_STUDIO_KEY; do
+            printf '%s\\n' "$names" | grep -Fxq "$required"
+          done
+          echo "required edge secret names present"
 
       - name: Deploy agent orchestrator
         run: supabase functions deploy agent-orchestrator --project-ref "$SUPABASE_PROJECT_ID"
