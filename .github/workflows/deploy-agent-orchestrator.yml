@@ -112,19 +112,19 @@ jobs:
 
       - name: Deploy agent functions
         run: |
-          supabase functions deploy agent-orchestrator --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy agent-confirm --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy songcraft-media --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy youtube-publish --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy youtube-sync-stats --project-ref "$SUPABASE_PROJECT_ID" --no-verify-jwt
-          supabase functions deploy youtube-publish-scheduler --project-ref "$SUPABASE_PROJECT_ID" --no-verify-jwt
-          supabase functions deploy youtube-oauth-start --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy youtube-oauth-callback --project-ref "$SUPABASE_PROJECT_ID" --no-verify-jwt
-          supabase functions deploy songcraft-youtube --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy video-renderer-dispatch --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy songcraft-cover-ai --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy songcraft-copywriter --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy songcraft-imports --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy songcraft-rhymes --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy songcraft-utilities --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy songcraft-studio-assistant --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy --use-api agent-orchestrator --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy --use-api agent-confirm --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy --use-api songcraft-media --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy --use-api youtube-publish --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy --use-api youtube-sync-stats --project-ref "$SUPABASE_PROJECT_ID" --no-verify-jwt
+          supabase functions deploy --use-api youtube-publish-scheduler --project-ref "$SUPABASE_PROJECT_ID" --no-verify-jwt
+          supabase functions deploy --use-api youtube-oauth-start --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy --use-api youtube-oauth-callback --project-ref "$SUPABASE_PROJECT_ID" --no-verify-jwt
+          supabase functions deploy --use-api songcraft-youtube --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy --use-api video-renderer-dispatch --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy --use-api songcraft-cover-ai --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy --use-api songcraft-copywriter --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy --use-api songcraft-imports --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy --use-api songcraft-rhymes --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy --use-api songcraft-utilities --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy --use-api songcraft-studio-assistant --project-ref "$SUPABASE_PROJECT_ID"
