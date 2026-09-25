@@ -1,5 +1,6 @@
-// Temney Agent v3.0 — server-only orchestrator.
+// Temney Agent v4.0 — server-only orchestrator, multi-provider / multi-model.
 // The model can choose tools, but every tool is dispatched here with verified user ownership.
+// LLM layer is provider-agnostic: providers+models are tried in order, falling back on failure.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -10,38 +11,103 @@ const CHARACTER_BIBLE = "mysterious solitary figure who grew up on the streets o
 const CONFIRM_REQUIRED = new Set(["publish_to_youtube", "update_existing_video", "send_comment_reply"]);
 
 type Input = { message?: unknown; history?: unknown; conversationId?: unknown; autoPublish?: unknown };
-type ToolCall = { id?: string; function?: { name?: string; arguments?: string } };
-type GeminiResponse = { candidates?: Array<{ content?: { parts?: Array<{ text?: string; functionCall?: { name?: string; args?: Record<string, unknown> } }> } }> };
+type LlmCall = { id?: string; name: string; args: Record<string, unknown>; thoughtSignature?: string };
+type LlmPart = { type: "text"; text: string } | { type: "functionCall"; name: string; args: Record<string, unknown>; id?: string; thoughtSignature?: string } | { type: "functionResponse"; name: string; response: unknown; id?: string; thoughtSignature?: string };
+type LlmMessage = { role: "user" | "model" | "function"; parts: LlmPart[] };
+type LlmResult = { text: string; calls: LlmCall[]; provider: string; model: string };
+type ProviderCfg = { id: string; keyEnvs: string[]; base: string; models: string[]; chat: (key: string, base: string, model: string, system: string, msgs: LlmMessage[], toolDefs: unknown[], withTools: boolean) => Promise<LlmResult> };
+
 const toolDefs = [
   { name: "list_songs", description: "List the user's songs and their artwork/video readiness.", parameters: { type: "object", properties: { withoutArtwork: { type: "boolean" } } } },
   { name: "list_lyric_drafts", description: "List the user's in-progress lyric drafts (sc_lyrics status draft), e.g. rozpracované texty.", parameters: { type: "object", properties: {} } },
   { name: "extract_lyric_themes", description: "Extract 3-6 visual motifs from a song lyric.", parameters: { type: "object", properties: { songId: { type: "string" } }, required: ["songId"] } },
   { name: "generate_song_artwork", description: "Generate Temney artwork from a song lyric and save it to private storage.", parameters: { type: "object", properties: { songId: { type: "string" }, aspectRatio: { type: "string", enum: ["1:1", "16:9"] }, userNote: { type: "string" } }, required: ["songId"] } },
   { name: "generate_metadata", description: "Draft YouTube title, description and tags for a song. Never publishes.", parameters: { type: "object", properties: { songId: { type: "string" } }, required: ["songId"] } },
-  { name: "render_video", description: "Queue a video render from the final song audio and artwork.", parameters: { type: "object", properties: { songId: { type: "string" }, type: { type: "string", enum: ["lyric_video", "static_cover", "short", "teaser"] } }, required: ["songId"] } },
+  { name: "render_video", description: "Queue a video render from the final song audio and artwork. Three 16:9 render modes: static_cover = 1280x720 static artwork over the final audio; image_animation = image-to-video animation of the artwork over the final audio; full_scenes = full scene-based video (storyboard scenes from audio lyrics + artwork as the character reference). Returns a videoId; the agent must report the render as pending and check status later.", parameters: { type: "object", properties: { songId: { type: "string" }, type: { type: "string", enum: ["static_cover", "image_animation", "full_scenes"] }, prompt: { type: "string" } }, required: ["songId"] } },
   { name: "create_recommendation", description: "Save a strategic recommendation for the user.", parameters: { type: "object", properties: { category: { type: "string", enum: ["seo", "thumbnail", "schedule", "content", "engagement", "strategy"] }, recommendation: { type: "string" }, reasoning: { type: "string" } }, required: ["category", "recommendation"] } },
   { name: "schedule_publication", description: "Create a private draft publication with a suggested time; never publish.", parameters: { type: "object", properties: { songId: { type: "string" }, title: { type: "string" }, scheduledAt: { type: "string" } }, required: ["songId"] } },
   { name: "publish_to_youtube", description: "Publish an already prepared draft. This always becomes pending confirmation unless the server setting explicitly allows automation.", parameters: { type: "object", properties: { publicationId: { type: "string" } }, required: ["publicationId"] } },
 ];
 
-function historyFrom(input: Input) {
+function historyFrom(input: Input): LlmMessage[] {
   if (!Array.isArray(input.history)) return [];
-  return input.history.slice(-12).flatMap((entry) => { const item = entry as { role?: unknown; content?: unknown }; const text = clip(item.content, 1500); return text ? [{ role: item.role === "assistant" ? "model" : "user", parts: [{ text }] }] : []; });
+  return input.history.slice(-12).flatMap((entry) => { const item = entry as { role?: unknown; content?: unknown }; const text = clip(item.content, 1500); return text ? [{ role: item.role === "assistant" ? "model" : "user", parts: [{ type: "text", text }] as LlmPart[] }] : []; });
 }
-async function gemini(apiKey: string, system: string, contents: unknown[], tools = true) {
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${encodeURIComponent(apiKey)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, tools: tools ? [{ functionDeclarations: toolDefs }] : undefined, generationConfig: { temperature: 0.55, maxOutputTokens: 1200 } }) });
-  if (!response.ok) throw new Error(`Gemini request failed (${response.status}): ${(await response.text()).slice(0, 300)}`);
-  return await response.json() as GeminiResponse;
+
+// ---- LLM layer: normalized neutral format, providers tried in order, fallback on any failure. ----
+function stripFences(text: string) { return text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim(); }
+async function ask(provider: ProviderCfg, key: string, model: string, system: string, msgs: LlmMessage[], toolDefs: unknown[], withTools: boolean): Promise<LlmResult> {
+  return await provider.chat(key, provider.base, model, system, msgs, toolDefs, withTools).catch((error) => { throw new Error(`${provider.id}:${model} ${error instanceof Error ? error.message.slice(0, 160) : String(error)}`); });
 }
+async function llm(system: string, msgs: LlmMessage[], toolDefs: unknown[], withTools = true): Promise<LlmResult> {
+  const providers: ProviderCfg[] = [
+    { id: "gemini", keyEnvs: ["GOOGLE_AI_STUDIO_KEY", "GEMINI_API_KEY"], base: "https://generativelanguage.googleapis.com/v1beta", models: ["gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-flash-lite-latest"], chat: geminiChat },
+    { id: "openrouter", keyEnvs: ["OPENROUTER_API_KEY"], base: "https://openrouter.ai/api/v1", models: ["google/gemini-3.1-flash-lite", "google/gemini-3.5-flash-lite", "deepseek/deepseek-v4.1-flash"], chat: openaiCompatibleChat },
+    { id: "deepseek", keyEnvs: ["DEEPSEEK_API_KEY"], base: "https://api.deepseek.com", models: ["deepseek-chat", "deepseek-flash"], chat: openaiCompatibleChat },
+  ];
+  const failures: string[] = [];
+  for (const provider of providers) {
+    const key = provider.keyEnvs.map((entry) => Deno.env.get(entry)).find(Boolean);
+    if (!key) { failures.push(`${provider.id}:no-key`); continue; }
+    for (const model of provider.models) {
+      try {
+        const result = await ask(provider, key, model, system, msgs, toolDefs, withTools);
+        return { ...result, provider: provider.id, model };
+      } catch (error) { failures.push(error instanceof Error ? error.message : String(error)); }
+    }
+  }
+  throw new Error(`Všichni LLM poskytovatelé selhali. ${failures.join(" | ")}`);
+}
+
+async function geminiChat(key: string, base: string, model: string, system: string, msgs: LlmMessage[], toolDefs: unknown[], withTools: boolean): Promise<LlmResult> {
+  const contents = jsonifyGemini(msgs);
+  const response = await fetch(`${base}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, tools: withTools ? [{ functionDeclarations: toolDefs }] : undefined, generationConfig: { temperature: 0.55, maxOutputTokens: 1200 } }), signal: AbortSignal.timeout(90_000) });
+  if (!response.ok) throw new Error(`HTTP ${response.status} ${(await response.text()).slice(0, 160)}`);
+  const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string; thoughtSignature?: string; functionCall?: { name?: string; args?: Record<string, unknown> } }> } }> };
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  const text = parts.map((part) => part.text ?? "").join("\n").trim();
+  const calls = parts.filter((part): part is { text?: string; thoughtSignature?: string; functionCall?: { name?: string; args?: Record<string, unknown> } } => Boolean(part.functionCall)).map((part) => ({ name: part.functionCall?.name ?? "", args: part.functionCall?.args ?? {}, thoughtSignature: part.thoughtSignature ?? "" }));
+  return { text, calls, provider: "gemini", model };
+}
+async function openaiCompatibleChat(key: string, base: string, model: string, system: string, msgs: LlmMessage[], toolDefs: unknown[], withTools: boolean): Promise<LlmResult> {
+  const messages: Array<Record<string, unknown>> = [{ role: "system", content: system }];
+  for (const msg of msgs) messages.push(...toOpenAIMessages(msg));
+  const tools = withTools ? (toolDefs as Array<{ name: string; description: string; parameters: unknown }>).map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })) : undefined;
+  const response = await fetch(`${base}/chat/completions`, { method: "POST", headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ model, messages, tools, temperature: 0.55, max_tokens: 1200 }), signal: AbortSignal.timeout(90_000) });
+  if (!response.ok) throw new Error(`HTTP ${response.status} ${(await response.text()).slice(0, 160)}`);
+  const data = await response.json() as { choices?: Array<{ message?: { content?: string | null; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> } }> };
+  const message = data.choices?.[0]?.message ?? {};
+  const text = (message.content ?? "").trim();
+  const calls = (message.tool_calls ?? []).map((call) => { try { return { id: call.id, name: call.function?.name ?? "", args: JSON.parse(call.function?.arguments ?? "{}") as Record<string, unknown> }; } catch { return { id: call.id, name: call.function?.name ?? "", args: {} }; } });
+  return { text, calls, provider: "openai-compatible", model };
+}
+function jsonifyGemini(msgs: LlmMessage[]) {
+  return msgs.map((msg) => {
+    const parts = msg.parts.map((part) => {
+      if (part.type === "text") return { text: part.text };
+      if (part.type === "functionCall") return { functionCall: { name: part.name, args: part.args }, ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}) };
+      return { functionResponse: { name: part.name, response: part.response }, ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}) };
+    });
+    return { role: msg.role === "function" ? "user" : msg.role, parts };
+  });
+}
+function toOpenAIMessages(msg: LlmMessage): Array<Record<string, unknown>> {
+  if (msg.role === "user") return [{ role: "user", content: textOf(msg) }];
+  if (msg.role === "function") return msg.parts.filter((part): part is Extract<LlmPart, { type: "functionResponse" }> => part.type === "functionResponse").map((part) => ({ role: "tool", tool_call_id: part.id ?? part.name, name: part.name, content: JSON.stringify(part.response) }));
+  const toolCalls = msg.parts.filter((part): part is Extract<LlmPart, { type: "functionCall" }> => part.type === "functionCall").map((part, index) => ({ id: part.id ?? `call_${index}`, type: "function", function: { name: part.name, arguments: JSON.stringify(part.args) } }));
+  return [{ role: "assistant", content: textOf(msg) || null, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) }];
+}
+function textOf(msg: LlmMessage) { return msg.parts.filter((part): part is Extract<LlmPart, { type: "text" }> => part.type === "text").map((part) => part.text).join("\n"); }
+
 async function row(admin: any, table: string, id: string, userId: string, select = "*") { const { data, error } = await admin.from(table).select(select).eq("id", id).eq("user_id", userId).maybeSingle(); if (error) throw new Error(error.message); if (!data) throw new Error("Položka nebyla nalezena nebo k ní nemáš přístup."); return data; }
 async function log(admin: any, userId: string, action: string, result: "success" | "error" | "pending", payload: unknown, targetId?: string, errorMessage?: string) { await admin.from("agent_action_log").insert({ user_id: userId, action_type: action, target_id: targetId ?? null, payload, result, error_message: errorMessage ?? null }); }
-async function dispatch(admin: any, userId: string, name: string, args: Record<string, unknown>, geminiKey: string) {
+async function dispatch(admin: any, userId: string, name: string, args: Record<string, unknown>) {
   if (CONFIRM_REQUIRED.has(name)) { await log(admin, userId, name, "pending", args); return { status: "pending_confirmation", message: `Akce ${name} čeká na potvrzení uživatele. Nic veřejného nebylo provedeno.` }; }
   if (name === "list_songs") { let query = admin.from("sc_songs").select("id,title,cover_path,album_id,created_at,updated_at").eq("user_id", userId).order("updated_at", { ascending: false }).limit(50); const { data, error } = await query; if (error) throw new Error(error.message); const songs = (data ?? []).filter((song: any) => !args.withoutArtwork || !song.cover_path); await log(admin, userId, name, "success", { count: songs.length }); return { status: "success", count: songs.length, songs }; }
   if (name === "list_lyric_drafts") { let query = admin.from("sc_lyrics").select("id,title,status,updated_at,lyrics").eq("user_id", userId).eq("status", "draft").order("updated_at", { ascending: false }).limit(20); const { data, error } = await query; if (error) throw new Error(error.message); const drafts = data ?? []; await log(admin, userId, name, "success", { count: drafts.length }); return { status: "success", count: drafts.length, drafts }; }
-  if (name === "extract_lyric_themes") { const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title,lyrics,style_prompt"); const answer = await gemini(geminiKey, `Extract exactly 3-6 concise visual motifs for Temney from the lyric. Return only a JSON array of strings. Character bible: ${CHARACTER_BIBLE}`, [{ role: "user", parts: [{ text: JSON.stringify({ title: song.title, style: song.style_prompt, lyrics: clip(song.lyrics, 5000) }) }] }], false); const text = answer.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "[]"; try { const cleaned = text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim(); return { themes: JSON.parse(cleaned) }; } catch { return { themes: [text.slice(0, 240)] }; } }
+  if (name === "extract_lyric_themes") { const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title,lyrics,style_prompt"); const answer = await llm(`Extract exactly 3-6 concise visual motifs for Temney from the lyric. Return only a JSON array of strings. Character bible: ${CHARACTER_BIBLE}`, [{ role: "user", parts: [{ type: "text", text: JSON.stringify({ title: song.title, style: song.style_prompt, lyrics: clip(song.lyrics, 5000) }) }] }], [], false); const text = answer.text || "[]"; try { return { themes: JSON.parse(stripFences(text)) }; } catch { return { themes: [text.slice(0, 240)] }; } }
   if (name === "generate_song_artwork") { const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title,lyrics,style_prompt,album_id"); let albumTitle = clip(args.albumTitle, 140) || "Temney Album"; if (song.album_id) { const { data: alb } = await admin.from("sc_albums").select("name").eq("id", song.album_id).single(); if (alb?.name) albumTitle = clip(alb.name, 140); } const ratio = "16:9"; const prompt = `Temney music artwork, ${ratio} composition. ${CHARACTER_BIBLE}. Artist: TEMNEY. Album: ${clip(albumTitle, 140)}. Song title: ${clip(song.title, 140)}.  ${clip(song.style_prompt, 500)} ${clip(song.lyrics, 2400)}. Creative note: ${clip(args.userNote, 400)}.`; const asset = { user_id: userId, song_id: song.id, asset_type: "song_artwork", aspect_ratio: ratio, prompt_used: prompt, status: "generating" }; const { data: created, error: createError } = await admin.from("agent_image_assets").insert(asset).select("id").single(); if (createError) throw new Error(createError.message); const seed = crypto.randomUUID(); const sourceUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${ratio === "16:9" ? 1280 : 1024}&height=${ratio === "16:9" ? 720 : 1024}&seed=${encodeURIComponent(seed)}&nologo=true`; const image = await fetch(sourceUrl); if (!image.ok) throw new Error(`Pollinations artwork generation failed (${image.status}).`); const bytes = new Uint8Array(await image.arrayBuffer()); const path = `${userId}/agent-artwork/${song.id}-${seed}.jpg`; const { error: uploadError } = await admin.storage.from("songcraft").upload(path, bytes, { contentType: "image/jpeg", upsert: false }); if (uploadError) throw new Error(uploadError.message); await admin.from("agent_image_assets").update({ base_image_path: path, final_image_path: path, status: "ready", seed }).eq("id", created.id); await admin.from("sc_songs").update({ cover_path: path }).eq("id", song.id).eq("user_id", userId); await log(admin, userId, name, "success", { path, ratio }, song.id); return { status: "ready", assetId: created.id, storagePath: path, prompt }; }
-  if (name === "generate_metadata") { const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title,lyrics,style_prompt"); const answer = await gemini(geminiKey, "Create YouTube metadata in Czech for Temney. Return JSON with title (max 100 chars), description (max 4500 chars), tags (array of max 15 short strings). No claims not supported by the input.", [{ role: "user", parts: [{ text: JSON.stringify({ title: song.title, style: song.style_prompt, lyrics: clip(song.lyrics, 2600) }) }] }], false); const text = answer.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "{}"; return { draft: text.replace(/^```json\s*|\s*```$/g, "").trim() }; }
+  if (name === "generate_metadata") { const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title,lyrics,style_prompt"); const answer = await llm("Create YouTube metadata in Czech for Temney. Return JSON with title (max 100 chars), description (max 4500 chars), tags (array of max 15 short strings). No claims not supported by the input.", [{ role: "user", parts: [{ type: "text", text: JSON.stringify({ title: song.title, style: song.style_prompt, lyrics: clip(song.lyrics, 2600) }) }] }], [], false); return { draft: stripFences(answer.text || "{}") }; }
   if (name === "render_video") { const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title"); const { data, error } = await admin.from("agent_videos").insert({ user_id: userId, song_id: song.id, type: args.type ?? "static_cover", render_status: "queued" }).select("id,render_status").single(); if (error) throw new Error(error.message); await log(admin, userId, name, "success", { type: args.type ?? "static_cover" }, data.id); return { status: "queued", videoId: data.id }; }
   if (name === "create_recommendation") { const { data, error } = await admin.from("agent_recommendations").insert({ user_id: userId, category: args.category ?? "strategy", recommendation: clip(args.recommendation, 2000), reasoning: clip(args.reasoning, 3000) }).select("id,status").single(); if (error) throw new Error(error.message); await log(admin, userId, name, "success", args, data.id); return data; }
   if (name === "schedule_publication") { const song = await row(admin, "sc_songs", String(args.songId), userId, "id,title,cover_path"); const suggested = typeof args.scheduledAt === "string" && args.scheduledAt ? args.scheduledAt : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); const { data, error } = await admin.from("youtube_publications").insert({ user_id: userId, song_id: song.id, title: clip(args.title, 100) || `Temney – ${song.title}`, thumbnail_path: song.cover_path, scheduled_at: suggested, status: "draft", privacy_status: "private" }).select("id,status,scheduled_at").single(); if (error) throw new Error(error.message); await log(admin, userId, name, "success", { scheduledAt: suggested }, data.id); return data; }
@@ -60,13 +126,19 @@ Deno.serve(async (request) => {
 async function handle(request: Request): Promise<Response> {
   if (request.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (request.method !== "POST") return json({ error: "Použij POST." }, 405);
-  const authorization = request.headers.get("Authorization"); const url = Deno.env.get("SUPABASE_URL"); const anon = Deno.env.get("SUPABASE_ANON_KEY"); const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"); const geminiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_AI_STUDIO_KEY");
-  if (!authorization || !url || !anon || !service || !geminiKey) return json({ error: "Agent není nakonfigurovaný. Nastav Supabase secrets GEMINI_API_KEY, SUPABASE_URL a service role klíč." }, 503);
+  const authorization = request.headers.get("Authorization"); const url = Deno.env.get("SUPABASE_URL"); const anon = Deno.env.get("SUPABASE_ANON_KEY"); const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!authorization || !url || !anon || !service) return json({ error: "Agent není nakonfigurovaný. Nastav Supabase secrets (SUPABASE_URL, klíče a service role klíč)." }, 503);
   const auth = createClient(url, anon, { global: { headers: { Authorization: authorization } } }); const { data: { user }, error: authError } = await auth.auth.getUser(); if (authError || !user) return json({ error: "Neplatné přihlášení." }, 401); const admin = createClient(url, service);
   const input = await request.json().catch(() => null) as Input | null; const message = clip(input?.message, 2000); if (!message) return json({ error: "Napiš zprávu pro agenta." }, 400);
   const system = `Jsi Temney Agent v SongCraft Studio. Odpovídej česky. Používej nástroje, když můžeš provést konkrétní bezpečný krok. Nikdy netvrď, že se akce stala, pokud nástroj nevrátil úspěch. Veřejné akce jsou vždy pending_confirmation. Character bible: ${CHARACTER_BIBLE}. Soukromá data patří pouze ověřenému user_id ${user.id}.`;
-  const contents: any[] = [...historyFrom(input ?? {}), { role: "user", parts: [{ text: message }] }]; let finalText = ""; const pending: unknown[] = [];
-  for (let step = 0; step < 6; step += 1) { const response = await gemini(geminiKey, system, contents, true); const parts = response.candidates?.[0]?.content?.parts ?? []; const calls = parts.map((part) => part.functionCall).filter(Boolean) as Array<{ name?: string; args?: Record<string, unknown> }>; const text = parts.map((part) => part.text ?? "").join("\n").trim(); if (text) finalText = text; if (!calls.length) break; contents.push({ role: "model", parts: parts.filter((part) => part.functionCall) }); for (const call of calls) { const name = call.name ?? ""; try { const result = await dispatch(admin, user.id, name, call.args ?? {}, geminiKey); if ((result as any)?.status === "pending_confirmation") pending.push({ tool: name, ...result }); contents.push({ role: "function", parts: [{ functionResponse: { name, response: result } }] }); } catch (error) { const message = error instanceof Error ? error.message : "Nástroj selhal."; await log(admin, user.id, name, "error", call.args ?? {}, undefined, message); contents.push({ role: "function", parts: [{ functionResponse: { name, response: { error: message } } }] }); } } }
+  const contents: LlmMessage[] = [...historyFrom(input ?? {}), { role: "user", parts: [{ type: "text", text: message }] }]; let finalText = ""; const pending: unknown[] = [];
+  for (let step = 0; step < 6; step += 1) {
+    const response = await llm(system, contents, toolDefs, true);
+    const calls = response.calls.map((call) => ({ ...call, id: call.id ?? crypto.randomUUID() })); if (response.text) finalText = response.text;
+    if (!calls.length) break;
+    contents.push({ role: "model", parts: calls.map((call) => ({ type: "functionCall", name: call.name, args: call.args, id: call.id, ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}) })) });
+    for (const call of calls) { const name = call.name ?? ""; try { const result = await dispatch(admin, user.id, name, call.args ?? {}); if ((result as any)?.status === "pending_confirmation") pending.push({ tool: name, ...result }); contents.push({ role: "function", parts: [{ type: "functionResponse", name, response: result, id: call.id, ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}) }] }); } catch (error) { const message = error instanceof Error ? error.message : "Nástroj selhal."; await log(admin, user.id, name, "error", call.args ?? {}, undefined, message); contents.push({ role: "function", parts: [{ type: "functionResponse", name, response: { error: message }, id: call.id, ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}) }] }); } }
+  }
   if (!finalText) finalText = "Úkol jsem zpracoval, ale agent nevrátil textové shrnutí."; if (pending.length) finalText += `\n\nČeká na potvrzení:\n${pending.map((item: any) => `• ${item.tool}`).join("\n")}`;
   return json({ answer: finalText, pending });
 }
