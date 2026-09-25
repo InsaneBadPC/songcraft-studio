@@ -107,7 +107,7 @@ declare
 begin
   if rel is null then return; end if;
   select coalesce(array_agg(oid), '{}'::oid[]) into service_oids from pg_roles where rolname = 'service_role';
-  for pol in select policyname, polroles from pg_policy where polrelid = rel loop
+  for pol in select polname as policyname, polroles from pg_policy where polrelid = rel loop
     if pol.polroles && service_oids then continue; end if;
     execute format('drop policy if exists %I on %s', pol.policyname, rel);
   end loop;

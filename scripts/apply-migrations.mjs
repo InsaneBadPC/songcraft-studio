@@ -161,44 +161,79 @@ async function appliedVersions(token, ref) {
   return new Set(rows.map((row) => String(row.version ?? row)));
 }
 
-const PREFLIGHT_SQL = `
-select 'agent_videos' as source, count(*)::int as legacy_paths
-from public.agent_videos
-where storage_path is not null
-  and (storage_path like '/%' or storage_path like '..%' or storage_path like '%/../%' or storage_path like '%\\\\%')
-union all
-select 'agent_image_assets', count(*)::int
-from public.agent_image_assets
-where storage_path is not null
-  and (storage_path like '/%' or storage_path like '..%' or storage_path like '%/../%' or storage_path like '%\\\\%')
-union all
-select 'agent_media_uploads', count(*)::int
-from public.agent_media_uploads
-where storage_path is not null
-  and (storage_path like '/%' or storage_path like '..%' or storage_path like '%/../%' or storage_path like '%\\\\%');`;
+const PATH_COLUMNS = {
+  agent_videos: ['storage_path', 'output_path', 'audio_storage_path'],
+  agent_image_assets: ['base_image_path', 'final_image_path', 'render_url'],
+  agent_media_uploads: ['storage_path'],
+  sc_cover_jobs: ['storage_path', 'output_path', 'cover_path'],
+  sc_songs: ['cover_url', 'cover_path', 'audio_path'],
+};
 
 async function runPreflight(token, ref) {
+  // 1) existující tabulky a sloupce (aby se nekonal dotaz na neexistující sloupec)
+  const inventory = await query(
+    token,
+    ref,
+    `select table_name, column_name
+       from information_schema.columns
+      where table_schema = 'public'
+        and table_name in (${Object.keys(PATH_COLUMNS).map((name) => `'${name}'`).join(', ')})`,
+  );
+  const rows = Array.isArray(inventory) ? inventory : (inventory?.result ?? []);
+  const present = new Map();
+  for (const row of rows) {
+    if (!present.has(row.table_name)) present.set(row.table_name, new Set());
+    present.get(row.table_name).add(row.column_name);
+  }
+
+  // 2) fail-closed kontrola legacy cest (prefix ${user_id}/)
+  const parts = [];
+  const checked = [];
+  for (const [table, columns] of Object.entries(PATH_COLUMNS)) {
+    if (!present.has(table)) {
+      console.log(`preflight: table ${table} není v tomto projektu - přeskočeno`);
+      continue;
+    }
+    for (const column of columns) {
+      if (!present.get(table).has(column)) continue;
+      parts.push(
+        `select '${table}.${column}' as source, count(*)::int as legacy_paths
+           from public."${table}"
+          where "${column}" is not null
+            and ("${column}" like '/%'
+              or "${column}" like '..%'
+              or "${column}" like '%/../%'
+              or "${column}" like '%\\\\%')`,
+      );
+      checked.push(`${table}.${column}`);
+    }
+  }
+
+  if (parts.length === 0) {
+    console.log('preflight: žádné path sloupce k ověření');
+    return;
+  }
+
   let result;
   try {
-    result = await query(token, ref, PREFLIGHT_SQL);
+    result = await query(token, ref, `${parts.join('\nunion all\n')};`);
   } catch (error) {
-    // A missing legacy table is not a blocker for the agent migrations.
-    if (/does not exist/i.test(String(error))) {
-      console.log('preflight: skipped (legacy tables not present in this project)');
-      return;
-    }
-    throw error;
-  }
-  const rows = Array.isArray(result) ? result : (result?.result ?? []);
-  const offenders = rows.filter((row) => Number(row.legacy_paths ?? 0) > 0);
-  for (const row of rows) console.log(`preflight: ${row.source} legacy paths = ${row.legacy_paths ?? 0}`);
-  if (offenders.length > 0) {
     fail(
-      `legacy storage paths detected in: ${offenders.map((row) => row.source).join(', ')}. ` +
-        'Move or fix those objects first — the hardening migration is fail-closed and must not be bypassed.',
+      `preflight se nepodařilo provést (fail-closed): ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  console.log('preflight: OK');
+  const resultRows = Array.isArray(result) ? result : (result?.result ?? []);
+  const offenders = resultRows.filter((row) => Number(row.legacy_paths ?? 0) > 0);
+  for (const row of resultRows) {
+    console.log(`preflight: ${row.source} legacy paths = ${row.legacy_paths ?? 0}`);
+  }
+  if (offenders.length > 0) {
+    fail(
+      `legacy storage paths v: ${offenders.map((row) => row.source).join(', ')}. ` +
+        'Přesuň nebo oprav objekty ručně - hardening migrace je fail-closed a nesmí se obejít.',
+    );
+  }
+  console.log(`preflight: OK (${checked.length} sloupců: ${checked.join(', ')})`);
 }
 
 async function main() {
@@ -220,8 +255,11 @@ async function main() {
   await runPreflight(token, ref);
 
   const applied = await appliedVersions(token, ref);
+  const local = new Set(migrations.map((migration) => migration.version));
+  const unknown = [...applied].filter((version) => !local.has(version));
   const pending = migrations.filter((migration) => !applied.has(migration.version));
   console.log(`applied: ${applied.size}, pending: ${pending.length}`);
+  if (unknown.length > 0) console.log(`applied mimo lokální repo: ${unknown.join(', ')}`);
 
   if (pending.length === 0) {
     console.log('nothing to apply — ledger is up to date');
@@ -241,9 +279,11 @@ async function main() {
   for (const migration of pending) {
     const sql = await readFile(path.join(MIGRATIONS_DIR, migration.file), 'utf8');
     const body = stripTopLevelTransactions(sql);
+    // Dollar-quoted tag, který se v migracích nevyskytuje: `$$` těla plpgsql
+    // zůstávají nedotčená a není potřeba žádné escapování.
     const ledger = [
       'insert into supabase_migrations.schema_migrations (version, name, statements)',
-      `values ('${migration.version}', '${migration.label}', array[$${sql.replace(/\$/g, '$$')}])`,
+      `values ('${migration.version}', '${migration.label}', array[$songcraft_migration$${sql}$songcraft_migration$])`,
       'on conflict (version) do nothing;',
     ].join('\n');
     process.stdout.write(`applying ${migration.version} ${migration.label} ... `);

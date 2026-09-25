@@ -157,7 +157,7 @@ begin
   if rel is null then return; end if;
   select coalesce(array_agg(oid), '{}'::oid[]) into service_oids
     from pg_roles where rolname = 'service_role';
-  for policy_row in select policyname, polroles from pg_policy where polrelid = rel loop
+  for policy_row in select polname as policyname, polroles from pg_policy where polrelid = rel loop
     if policy_row.polroles is null or not (policy_row.polroles && service_oids) then
       execute format('drop policy if exists %I on %s', policy_row.policyname, rel);
     end if;
@@ -247,7 +247,7 @@ begin
   if to_regclass('storage.objects') is null then return; end if;
   select coalesce(array_agg(oid), '{}'::oid[]) into service_oids from pg_roles where rolname = 'service_role';
   for policy_row in
-    select policyname, polroles, pg_get_expr(polqual, polrelid) as qual, pg_get_expr(polwithcheck, polrelid) as with_check
+    select polname as policyname, polroles, pg_get_expr(polqual, polrelid) as qual, pg_get_expr(polwithcheck, polrelid) as with_check
     from pg_policy where polrelid = 'storage.objects'::regclass
   loop
     policy_text := coalesce(policy_row.qual, '') || ' ' || coalesce(policy_row.with_check, '');
