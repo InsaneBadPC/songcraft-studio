@@ -94,6 +94,9 @@ jobs:
             "SONGCRAFT_SUPABASE_URL=$SONGCRAFT_SUPABASE_URL" \
             "SONGCRAFT_SUPABASE_ANON_KEY=$SONGCRAFT_SUPABASE_ANON_KEY" \
             "SONGCRAFT_SERVICE_ROLE_KEY=$SONGCRAFT_SERVICE_ROLE_KEY" \
+            "SUPABASE_URL=$SONGCRAFT_SUPABASE_URL" \
+            "SUPABASE_ANON_KEY=$SONGCRAFT_SUPABASE_ANON_KEY" \
+            "SUPABASE_SERVICE_ROLE_KEY=$SONGCRAFT_SERVICE_ROLE_KEY" \
             "GOOGLE_AI_STUDIO_KEY=$GOOGLE_AI_STUDIO_KEY" \
             "YOUTUBE_CLIENT_ID=$YOUTUBE_CLIENT_ID" \
             "YOUTUBE_CLIENT_SECRET=$YOUTUBE_CLIENT_SECRET" \
@@ -105,12 +108,7 @@ jobs:
             "PUBLISH_SCHEDULER_SECRET=$PUBLISH_SCHEDULER_SECRET"
 
       - name: Verify Edge Function secret names
-        run: |
-          names=$(supabase secrets list --project-ref "$SUPABASE_PROJECT_ID" --output json | jq -r '.[].name' | sort)
-          for required in SONGCRAFT_SUPABASE_URL SONGCRAFT_SUPABASE_ANON_KEY SONGCRAFT_SERVICE_ROLE_KEY GOOGLE_AI_STUDIO_KEY YOUTUBE_CLIENT_ID YOUTUBE_CLIENT_SECRET YOUTUBE_REDIRECT_URI SONGCRAFT_APP_REDIRECT_URL SONGCRAFT_ALLOWED_USER_IDS SONGCRAFT_ALLOWED_EMAILS SYNC_STATS_CRON_SECRET PUBLISH_SCHEDULER_SECRET; do
-            printf '%s\\n' "$names" | grep -Fxq "$required"
-          done
-          echo "required edge secret names present"
+        run: node scripts/verify-edge-secrets.mjs
 
       - name: Deploy agent functions
         run: |

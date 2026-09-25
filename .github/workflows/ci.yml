@@ -39,7 +39,12 @@ jobs:
       - name: Hermetic tests
         run: pnpm test
       - name: Web export
-        run: pnpm exec expo export --platform web
+        # NativeWind zapisuje web.css do .cache až během bundlu a Metro pak
+        # nemůže spočítat SHA-1 souboru, který se mezitím změnil. Cache proto
+        # před každým exportem vyčistíme (build zůstává deterministický).
+        run: |
+          rm -rf node_modules/react-native-css-interop/.cache
+          pnpm exec expo export --platform web
 
   deno-functions:
     runs-on: ubuntu-latest

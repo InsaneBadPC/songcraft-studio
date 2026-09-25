@@ -32,9 +32,17 @@ Tento záznam obsahuje pouze výsledky offline/hermetic a read-only live kontrol
 
 ## Blokér (live nasazení)
 
-- Management API token pro projekt `hfykngbhcxmnpxvjagoj` **není dostupný**: dva tokeny v `Secret/PRISTUPOVE-ÚDAJE.md` a `Secret/API Klíče.csv` jsou platné, ale patří ke smazaným projektům (`rrpiipffnlkjdzhjetbe`, `nukukxqiauypagjubznl` → HTTP 403, DNS neexistuje); dva tokeny označené „songcraft" vracejí HTTP 401 (neplatné/expirované).
-- Heslo do Postgres není nikde v dostupných podkladech, takže `supabase link` / `supabase db push` nelze použít. Nasazení proto běží přes Management API (`database/query`), pro což je připraven `scripts/apply-migrations.mjs` a `scripts/deploy-production.sh`.
-- Bez platného management tokenu nelze aplikovat migrace, nastavit secrets ani nasadit Edge Functions. `agent_videos` tabulka na produkci zatím neexistuje, takže Oracle worker by po nasazení bez databáze jen bezvýsledně polloval.
+- Management API token pro projekt `hfykngbhcxmnpxvjagoj` byl nalezen jako GitHub Actions secret `SUPABASE_ACCESS_TOKEN` v repozitáři `InsaneBadPC/songcraft-studio`; workflow jím dnes (25. 9. 08:16 UTC) úspěšně prošlo. Tokeny v `Secret/` jsou buď neplatné (HTTP 401), nebo patří ke smazaným projektům (HTTP 403).
+- Do GitHub Secrets bylo přidáno 10 chybějících hodnot (YouTube OAuth client, allowlist 3 účtů, scheduler seedy, service role, Gemini) přes veřejný klíč repozitáře a NaCl sealed box; hodnoty se nikdy nevypisovaly.
+- **Aktuální blokér:** GitHub účet `InsaneBadPC` nemá ověřený e-mail, proto odmítá git push i Git Data API (`403 At least one email address must be verified`). Po ověření e-mailu stačí pushnout commit `2aafa48` a workflow dokončí migrace, secrets a nasazení všech funkcí.
+- Před nasazením byl nalezen a opraven skutečný bug: `pg_policy` má sloupec `polname`, ne `policyname` (chyba by shodila hardening i core migraci na produkci). Oprava je ověřena na lokálním Postgres 18.
+
+## Ověření migrací na lokálním Postgres 18
+
+- všech 11 migrací projde v pořadí i při **druhém průchodu** (idempotence)
+- fail-closed kontrola správně odmítne legacy storage cestu a migrace se odroluje (žádné nové policy/triggery)
+- ledger insert ve tvaru používaném CI funguje (1 řádek, uložená délka statementu odpovídá souboru)
+- emulace Supabase: `auth.uid()`, `auth.role()`, `storage.buckets`, `storage.objects`, role `anon`/`authenticated`/`service_role`
 
 ## Záměrně neprovedeno
 
