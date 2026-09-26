@@ -132,12 +132,45 @@ async function dashPoll(runId, timeoutMs = 90 * 60 * 1000) {
     if (!response.ok) throw new Error(`dashboard runs ${response.status}: ${await response.text()}`);
     const runs = await response.json();
     const item = (Array.isArray(runs) ? runs : []).find((r) => String(r?.run_id) === String(runId));
-    if (item?.status === "finished" && item?.download) return item;
-    if (item?.status === "failed" || item?.status === "error") throw new Error(`dashboard run failed: ${String(item?.message || item?.error || "").slice(0, 300)}`);
-    if (item?.output) return item;
+    if (!item) {
+      await new Promise((resolve) => setTimeout(resolve, 15000));
+      continue;
+    }
+    // Selhání běhu musí přijít PRVNÍ: dashboard nechává u neúspěšných běhů
+    // pole `output`, které míří na neexistující soubor — bez této kontroly
+    // by worker skončil na "Download failed 404" a ztratil důvod (např. vyčerpanou
+    // GPU kvótu), takže by to vypadalo jako chyba sítě.
+    const status = String(item?.status ?? "").toLowerCase();
+    if (["failed", "error", "crashed"].includes(status)) {
+      const reason = String(item?.error || item?.message || item?.reason || status).slice(0, 400);
+      throw new Error(`Oracle dashboard selhal render: ${reason}`);
+    }
+    if (item?.download) return item;
+    if (item?.output && status === "finished") return item;
     await new Promise((resolve) => setTimeout(resolve, 15000));
   }
   throw new Error("dashboard render timed out");
+}
+
+/** Po stažení ověří, že je soubor použitelný video (ne 0 B, ne HTML chyba). */
+async function assertPlayableVideo(file) {
+  const { size } = await stat(file);
+  if (size < 20_000) throw new Error(`Výstup videa je příliš malý (${size} B) — render selhal`);
+  const probe = await new Promise((resolve) => {
+    exec("ffprobe", [
+      "-v", "error",
+      "-select_streams", "v:0",
+      "-show_entries", "stream=width,height,codec_name:format=duration",
+      "-of", "default=nw=1:nk=1",
+      file,
+    ], { maxBuffer: 4 * 1024 * 1024 })
+      .then(({ stdout }) => resolve(String(stdout)))
+      .catch((error) => resolve(`ERR ${error.message}`));
+  });
+  if (probe.startsWith("ERR") || !/width=\d+/i.test(probe)) {
+    throw new Error(`Výstup není čitelné video (ffprobe): ${probe.slice(0, 160)}`);
+  }
+  return probe.replace(/\n/g, " ");
 }
 
 async function processJob(job) {
@@ -177,12 +210,14 @@ async function processJob(job) {
         "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "192k", "-shortest", output,
       ]);
+      await assertPlayableVideo(output);
     } else if (type === "image_animation" || type === "full_scenes") {
       // === větve B/C: dashboard pipeline (Oracle localhost, Wan 2.2 I2V / scény) ===
       const mode = type === "image_animation" ? "image_animation" : "full_scenes";
       const record = await dashGenerate(mode, audio, artwork, song.title, job.prompt_used || "");
       await dashPoll(record.run_id);
       await download(`${dashboardUrl}/api/runs/${record.run_id}/download`, output, { Authorization: dashAuth() });
+      await assertPlayableVideo(output);
     } else {
       throw new Error(`Unknown video type: ${type}`);
     }
