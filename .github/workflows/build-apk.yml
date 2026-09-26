@@ -102,7 +102,12 @@ jobs:
           fi
           echo "version=$next_version" >> "$GITHUB_OUTPUT"
           echo "version_code=$next_code" >> "$GITHUB_OUTPUT"
-          echo "vydáno: ${latest_version:-žádné} | balíček: $package_version | nové: $next_version (code $next_code)"
+          # Verze musí být i uvnitř APK: `Constants.expoConfig.version` (Nastavení)
+          # a Android versionName jinak odpovídají package.json, ne tagu release —
+          # aplikace by si pak pořád nabízela „novou" verzi, kterou už má.
+          npm version --no-git-tag-version --allow-same-version "$next_version" >/dev/null
+          echo "balíček nastaven na $(node -p "require('./package.json').version")"
+          echo "vydáno: ${latest_version:-žádné} | nové: $next_version (code $next_code)"
 
       - name: Generate Android project
         env:
