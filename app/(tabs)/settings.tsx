@@ -29,7 +29,7 @@ export default function SettingsScreen() {
   const runUpdateCheck = async () => {
     setChecking(true);
     try {
-      const found = await checkForUpdate();
+      const found = await checkForUpdate({ force: true });
       setUpdate(found);
       if (!found) Alert.alert("Máš nejnovější verzi", `SongCraft Studio ${CURRENT_VERSION} je aktuální.`);
     } catch (error) {
