@@ -20,13 +20,27 @@ Tento záznam obsahuje výsledky hermetic kontrol, živých E2E testů a stav ro
 - izolace účtů: žádný překryv songů mezi účty, cizí song nepřístupný
 - 24 songů / 20 audio verzí / 10 jobů ve frontě dostupných pro render testy
 
-## Video pipeline (skutečný render)
+## Video pipeline (skutečné rendery, vše tři režimy)
 
-- `static_cover`: job vytvořen přes `songcraft-youtube` jako přihlášený uživatel → nový worker si ho zamkl lease → `queued → rendering → ready`
-- výstup 17.97 MB MP4 (platné `ftyp`), 16:9, v soukromém bucketu `songcraft` s owner-prefix cestou
-- anonymní čtení objektu: HTTP 400 (soukromé), vlastník přes signed URL: HTTP 200
+- `static_cover` × 6, `image_animation` × 1, `full_scenes` × 1 — vše `ready`
+- postup: job vytvořen přes `songcraft-youtube` jako přihlášený uživatel → nový worker si ho zamkl lease → `queued → rendering → ready`
+- výstupy: 10–18 MB MP4, platné `ftyp`, 16:9, v soukromém bucketu `songcraft` s owner-prefix cestou
+- anonymní čtení objektu: HTTP 400 (soukromé); vlastník přes signed URL: HTTP 200
 - opravené chyby zjištěné živým během: chybějící čárka před `format=yuv420p` v filter chainu a detekce typu artworku z magic bytů
 - legacy `songcraft-video-renderer` (GitHub release pipeline) zastaven a vypnut; aktivní je už jen `songcraft-renderer`
+
+## Odstranění veřejných videí
+
+- release `songcraft-videos` měl 2 veřejná MP4 (35,7 MB + 48,5 MB) z 21. 9. 2026
+- oba dotčené songy dostaly soukromé náhradní rendery (`58ecdf30` pro `0c6d3151`, `b6780201` pro `e1c8326f`)
+- assety, release i tag smazány; oba veřejné URL vracejí 404
+- zbývají pouze APK release (distribuce aplikace)
+
+## Živé testy produkční brány (`pnpm test:live`)
+
+- 8/8 prošlo: 3 soukromé účty, assistant (401 bez JWT + odpověď přes Gemini), cover 16:9, Google AI Studio key, service role read-only
+- oprava: `vitest.config.ts` tyto testy vylučoval, takže `pnpm test:live` končil „No test files found"; přidán `vitest.live.config.ts`
+
 
 ## Oracle VM
 
@@ -47,8 +61,8 @@ Tento záznam obsahuje výsledky hermetic kontrol, živých E2E testů a stav ro
 ## Zbývá za release gate (vyžaduje výslovné potvrzení uživatele)
 
 - reálný YouTube publish po confirmation nonce (veřejný zásah — neprovádím bez souhlasu)
-- `image_animation` / `full_scenes` na Oracle (CPU-only Free Tier VM, bez GPU — pomalé, ověřuje se)
-- `pnpm test:live` proti produkčnímu Gemini/Supabase
+- `pnpm test:live` běžel a prošel; `image_animation`/`full_scenes` ověřeny na CPU-only VM
 - Android APK build přes CI workflow
-- rotace starých tokenů a API klíčů (odloženo podle zadání na release gate)
-- odstranění/zprivatizování existujících `songcraft-videos` release assetů na GitHubu
+- rotace starých tokenů a API klíčů (odloženo podle zadání na release gate — nasazení a E2E hotovo, teď je poslední krok)
+- ukončení starého `video-agent` dispatcheru na VM, pokud už nová fronta pokrývá i AI režimy
+
