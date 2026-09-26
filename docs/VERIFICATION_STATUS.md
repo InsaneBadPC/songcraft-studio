@@ -29,6 +29,17 @@ Tento záznam obsahuje výsledky hermetic kontrol, živých E2E testů a stav ro
 - opravené chyby zjištěné živým během: chybějící čárka před `format=yuv420p` v filter chainu a detekce typu artworku z magic bytů
 - legacy `songcraft-video-renderer` (GitHub release pipeline) zastaven a vypnut; aktivní je už jen `songcraft-renderer`
 
+## Android APK a automatické aktualizace
+
+- `.github/workflows/build-apk.yml` po každém pushi do klientského kódu vystaví APK, zveřejní ho jako release `app-vX.Y.Z` a doplní verzi, versionCode, velikost, sha256 a commit
+- verze se propíše i do `package.json` před `expo prebuild`, takže tag release, Android `versionName` a `Constants.expoConfig.version` (Nastavení) sedí — jinak by si updater nabízel verzi, kterou už aplikace má
+- `versionCode` se počítá jako maximum posledního vydání + 1 (Android nižší verci nepřijme)
+- podepisování: `scripts/configure-android-signing.mjs` po prebuildu vloží `release` do existujícího `signingConfigs` bloku a přepojí `release` buildType z debug klíče runnera (debug klíč se mezi buildy mění → aktualizace nebyly proveditelné)
+- klíč pouze v GitHub Secrets (`CI_KEYSTORE`, `CI_KEYSTORE_PASS`, `CI_KEY_ALIAS`), lokální záloha mimo repozitář
+- ověřeno: `app-v2.9.3` (versionCode 20903, 49 MB) podepsán certifikátem `CN=SongCraft Studio, OU=Release` se SHA-256 `97:95:BA:…:9D` (shoduje s lokálním keystore)
+- updater v aplikaci: banner při startu (s přeskočením verze) + ruční kontrola v Nastavení, throttle 30 min s cache (GitHub API bez tokenu má 60 req/h na IP)
+- **jednorázový krok pro uživatele:** staré APK je podepsané jiným klíčem, takže je nutné starou aplikaci odinstalovat a 2.9.3 nainstalovat ručně; další aktualizace už jdou přes aplikaci
+
 ## Odstranění veřejných videí
 
 - release `songcraft-videos` měl 2 veřejná MP4 (35,7 MB + 48,5 MB) z 21. 9. 2026
