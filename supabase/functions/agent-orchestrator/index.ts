@@ -1051,6 +1051,60 @@ async function dispatch(
       audioPath.includes("..")
     ) throw new Error("Finální MP3 nemá platnou cestu vlastníka.");
 
+    // Nahrane video: nepotrebujeme plan pohybu, sam se smycka.
+    if (hasSourceVideo) {
+      const { data: versions0, error: verErr0 } = await admin.from(
+        "sc_audio_versions",
+      )
+        .select("id,tagged_storage_path,original_storage_path,storage_path")
+        .eq("song_id", song.id).eq("user_id", userId).eq("is_final", true)
+        .order("is_primary", { ascending: false }).order("rating", {
+          ascending: false,
+        }).limit(1);
+      if (verErr0 || !versions0?.[0]) {
+        throw new Error("Pro render musí být vybraná finální MP3 verze.");
+      }
+      const v0 = versions0[0] as {
+        tagged_storage_path?: string | null;
+        original_storage_path?: string | null;
+        storage_path?: string | null;
+      };
+      const audio0 = v0.tagged_storage_path || v0.original_storage_path ||
+        v0.storage_path;
+      if (typeof audio0 !== "string" || !audio0.startsWith(`${userId}/`)) {
+        throw new Error("Finální MP3 nemá platnou cestu vlastníka.");
+      }
+      const { data: looped, error: loopErr } = await admin.from("agent_videos")
+        .insert({
+          user_id: userId,
+          song_id: song.id,
+          type: isShort ? "short" : "lyric_video",
+          mode: "loop_video",
+          backend: "vm_loop",
+          aspect: isShort ? "9:16" : "16:9",
+          audio_storage_path: audio0,
+          prompt_used: "smyčka z nahraného videa",
+          motion_prompt: null,
+          source_video_path: song.source_video_path,
+          recipe_source: "uploaded_video",
+          render_status: "queued",
+        }).select("id,render_status,mode,backend,aspect").single();
+      if (loopErr || !looped) {
+        throw new Error(loopErr?.message || "Render se nepodařilo založit.");
+      }
+      await log(admin, userId, name, "success", {
+        videoId: looped.id,
+        from: "uploaded_video",
+      }, looped.id);
+      return {
+        status: "queued",
+        videoId: looped.id,
+        aspect: looped.aspect,
+        mode: looped.mode,
+        hybe_se: "nahrané video v smyčce přes celou skladbu",
+      };
+    }
+
     // obal -> base64 pro vision
     const art = await admin.storage.from("songcraft").download(song.cover_path);
     if (art.error) {

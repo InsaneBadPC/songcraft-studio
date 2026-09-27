@@ -26,6 +26,7 @@ export type DraftData = {
   notes: string;
   coverStorageKey: string | null;
   coverUrl: string | null;
+  sourceVideoStorageKey?: string | null;
   savedAt: number;
 };
 
@@ -48,6 +49,7 @@ function normalizeDraft(value: unknown): DraftData | null {
     notes: source.notes,
     coverStorageKey: nullableString(source.coverStorageKey),
     coverUrl: nullableString(source.coverUrl),
+    sourceVideoStorageKey: nullableString(source.sourceVideoStorageKey),
     savedAt,
   };
 }

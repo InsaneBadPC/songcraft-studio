@@ -1,5 +1,4 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -9,6 +8,7 @@ import { RhymeFinder } from "@/components/rhyme-finder";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
+import { pickImage } from "@/lib/pick-media";
 import { assetToBase64 } from "@/lib/file-base64";
 import { clearDraft, loadDraft, shouldRestoreDraft, useDraftStorage } from "@/lib/use-draft-storage";
 import { trpc } from "@/lib/trpc";
@@ -106,12 +106,10 @@ export default function TextEditorScreen() {
     } catch (error) { Alert.alert("Uložení se nezdařilo", error instanceof Error ? error.message : "Zkus to znovu."); return null; } finally { setSaving(false); }
   };
   const uploadCover = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: false, quality: 0.92, base64: true });
-    if (result.canceled) return;
     try {
-      const asset = result.assets[0];
-      const base64 = await assetToBase64(asset.uri, asset.base64);
-      const uploaded = await upload.mutateAsync({ folder: "covers", fileName: asset.fileName ?? `cover-${Date.now()}.jpg`, contentType: asset.mimeType ?? "image/jpeg", base64 });
+      const picked = await pickImage();
+      if (!picked) return;
+      const uploaded = await upload.mutateAsync({ folder: "covers", fileName: picked.fileName, contentType: picked.mimeType, bytes: picked.bytes });
       setForm((current) => ({ ...current, coverStorageKey: uploaded.key, coverUrl: uploaded.url }));
     } catch (error) { Alert.alert("Přebal se nepodařilo nahrát", error instanceof Error ? error.message : "Zkus jiný obrázek."); }
   };

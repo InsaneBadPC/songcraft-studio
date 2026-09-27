@@ -1,5 +1,4 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
@@ -10,14 +9,15 @@ import { RhymeFinder } from "@/components/rhyme-finder";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
+import { pickImage, pickVideo } from "@/lib/pick-media";
 import { assetToBase64 } from "@/lib/file-base64";
 import { clearDraft, loadDraft, shouldRestoreDraft, useDraftStorage } from "@/lib/use-draft-storage";
 import { takePickedStylePrompt } from "@/lib/style-prompt-picker";
 import { trpc } from "@/lib/trpc";
 import { useUndoableText } from "@/lib/use-undoable-text";
 
-type SongForm = { title: string; albumId: string | null; stylePrompts: string[]; lyrics: string; notes: string; coverStorageKey: string | null; coverUrl: string | null };
-const emptyForm: SongForm = { title: "", albumId: null, stylePrompts: [""], lyrics: "", notes: "", coverStorageKey: null, coverUrl: null };
+type SongForm = { title: string; albumId: string | null; stylePrompts: string[]; lyrics: string; notes: string; coverStorageKey: string | null; coverUrl: string | null; sourceVideoStorageKey: string | null };
+const emptyForm: SongForm = { title: "", albumId: null, stylePrompts: [""], lyrics: "", notes: "", coverStorageKey: null, coverUrl: null, sourceVideoStorageKey: null };
 
 export function SongEditor({ songId }: { songId?: string }) {
   const colors = useColors();
@@ -74,6 +74,7 @@ export function SongEditor({ songId }: { songId?: string }) {
       lyrics: song.lyrics ?? "",
       notes: song.notes ?? "",
       coverStorageKey: song.coverStorageKey,
+      sourceVideoStorageKey: song.sourceVideoStorageKey,
       coverUrl: song.coverUrl,
     } : emptyForm;
     setForm(serverForm);
@@ -83,7 +84,7 @@ export function SongEditor({ songId }: { songId?: string }) {
     void loadDraft(songId ?? null, userId, "song").then((draft) => {
       if (cancelled || run !== draftRunRef.current) return;
       if (draft && shouldRestoreDraft(songUpdatedAt, draft.savedAt)) {
-        setForm({ title: draft.title, albumId: draft.albumId, stylePrompts: draft.stylePrompts?.length ? draft.stylePrompts : [draft.stylePrompt || ""], lyrics: draft.lyrics, notes: draft.notes, coverStorageKey: draft.coverStorageKey, coverUrl: draft.coverUrl });
+        setForm({ title: draft.title, albumId: draft.albumId, stylePrompts: draft.stylePrompts?.length ? draft.stylePrompts : [draft.stylePrompt || ""], lyrics: draft.lyrics, notes: draft.notes, coverStorageKey: draft.coverStorageKey, coverUrl: draft.coverUrl, sourceVideoStorageKey: draft.sourceVideoStorageKey ?? null });
         resetLyricsHistory(draft.lyrics);
         setDraftRestored(true);
       } else if (draft) {
@@ -95,7 +96,7 @@ export function SongEditor({ songId }: { songId?: string }) {
     return () => { cancelled = true; };
     // Server fields are listed individually so a new cache object does not wipe an unsaved form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetLyricsHistory, song?.albumId, song?.coverStorageKey, song?.coverUrl, song?.id, song?.lyrics, song?.notes, song?.title, songId, songStylePromptsKey, songUpdatedAt, snapshot.isLoading, userId]);
+  }, [resetLyricsHistory, song?.albumId, song?.coverStorageKey, song?.coverUrl, song?.id, song?.lyrics, song?.notes, song?.sourceVideoStorageKey, song?.title, songId, songStylePromptsKey, songUpdatedAt, snapshot.isLoading, userId]);
 
   useDraftStorage(form, songId ?? null, userId, draftReady, "song");
   useFocusEffect(useMemo(() => () => {
@@ -111,7 +112,7 @@ export function SongEditor({ songId }: { songId?: string }) {
     setSaving(true);
     try {
       const stylePrompts = form.stylePrompts.map((entry) => entry.trim()).filter(Boolean);
-      const payload = { title: form.title.trim(), albumId: form.albumId, stylePrompts, lyrics: form.lyrics || null, notes: form.notes || null, coverStorageKey: form.coverStorageKey, coverUrl: form.coverUrl };
+      const payload = { title: form.title.trim(), albumId: form.albumId, stylePrompts, lyrics: form.lyrics || null, notes: form.notes || null, coverStorageKey: form.coverStorageKey, coverUrl: form.coverUrl, sourceVideoStorageKey: form.sourceVideoStorageKey };
       const savedId = songId ? (await update.mutateAsync({ id: songId, ...payload }), songId) : await create.mutateAsync(payload);
       await clearDraft(songId ?? null, userId, "song");
       await clearDraft(savedId, userId, "song");
@@ -123,9 +124,35 @@ export function SongEditor({ songId }: { songId?: string }) {
   const uploadCover = async () => {
     // Androidův vestavěný editor může i při zadaném 16:9 vynutit čtvercový ořez.
     // Obrázek proto jen vybereme a celou kompozici zachováme v 16:9 rámečku.
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: false, quality: 0.92, base64: true });
-    if (result.canceled) return;
-    try { const asset = result.assets[0]; const base64 = await assetToBase64(asset.uri, asset.base64); const uploaded = await upload.mutateAsync({ folder: "covers", fileName: asset.fileName ?? `song-cover-${Date.now()}.jpg`, contentType: asset.mimeType ?? "image/jpeg", base64 }); setForm((current) => ({ ...current, coverStorageKey: uploaded.key, coverUrl: uploaded.url })); } catch (error) { Alert.alert("Obrázek se nepodařilo nahrát", error instanceof Error ? error.message : "Zkus jiný obrázek."); }
+    try {
+      const picked = await pickImage();
+      if (!picked) return;
+      const uploaded = await upload.mutateAsync({
+        folder: "covers",
+        fileName: picked.fileName,
+        contentType: picked.mimeType,
+        bytes: picked.bytes,
+      });
+      setForm((current) => ({ ...current, coverStorageKey: uploaded.key, coverUrl: uploaded.url }));
+    } catch (error) {
+      Alert.alert("Obrázek se nepodařilo nahrát", error instanceof Error ? error.message : "Zkus jiný obrázek.");
+    }
+  };
+  const uploadVideo = async () => {
+    try {
+      const picked = await pickVideo();
+      if (!picked) return;
+      const uploaded = await upload.mutateAsync({
+        folder: "videos",
+        fileName: picked.fileName,
+        contentType: picked.mimeType,
+        bytes: picked.bytes,
+      });
+      setForm((current) => ({ ...current, sourceVideoStorageKey: uploaded.key }));
+      Alert.alert("Video je nahrané", "Render z něj udělá smyčku přes celou skladbu.");
+    } catch (error) {
+      Alert.alert("Video se nepodařilo nahrát", error instanceof Error ? error.message : "Zkus jiné video.");
+    }
   };
   const openCoverDialog = () => {
     if (!songId) { Alert.alert("Nejprve skladbu ulož", "Nejdřív ulož název, album a text. Pak může aplikace vytvořit obal z přesně těchto uložených údajů."); return; }
@@ -172,7 +199,7 @@ export function SongEditor({ songId }: { songId?: string }) {
 
   return <ScreenContainer edges={["top", "bottom", "left", "right"]}><KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={{ flex: 1 }}><ScrollView contentContainerStyle={[styles.content, { paddingBottom: 180 }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" automaticallyAdjustKeyboardInsets>{draftRestored ? <View style={[styles.draftNotice, { backgroundColor: `${colors.accent}14`, borderColor: `${colors.accent}55` }]}><MaterialIcons name="restore" size={16} color={colors.accent} /><Text style={[styles.draftNoticeText, { color: colors.foreground }]}>Obnoven rozpracovaný text — klepni na Uložit pro potvrzení.</Text></View> : null}<View style={styles.topbar}><IconButton label="Zpět" icon="arrow-back" onPress={() => router.back()} /><Text numberOfLines={1} style={[styles.topbarName, { color: colors.foreground }]}>{songId ? "Upravit skladbu" : "Nová skladba"}</Text><Pressable onPress={() => void save()} style={({ pressed }) => [styles.save, { opacity: saving || pressed ? 0.6 : 1 }]}><Text style={[styles.saveText, { color: colors.primary }]}>{saving ? "Ukládám" : "Uložit"}</Text></Pressable></View>
     <View style={[styles.flow, { backgroundColor: `${colors.primary}13`, borderColor: `${colors.primary}45` }]}><MaterialIcons name="account-tree" size={20} color={colors.primary} /><Text style={[styles.flowText, { color: colors.muted }]}>Tato položka drží pohromadě text, obrázek, MP3 verze, metadata a album.</Text></View>
-    <View style={styles.coverBlock}><Pressable onPress={() => void uploadCover()} style={({ pressed }) => [styles.cover, { borderColor: colors.border, backgroundColor: colors.surface, opacity: pressed ? 0.72 : 1 }]}>{form.coverUrl ? <Image source={{ uri: form.coverUrl }} style={styles.coverImage} resizeMode="contain" /> : <><View style={[styles.coverIcon, { backgroundColor: `${colors.primary}20` }]}><MaterialIcons name="add-photo-alternate" size={25} color={colors.primary} /></View><Text style={[styles.coverTitle, { color: colors.foreground }]}>Přidat vlastní obrázek skladby</Text><Text style={[styles.coverText, { color: colors.muted }]}>Celá kompozice bez ořezu v 16:9 pro katalog i YouTube video.</Text></>}</Pressable><Pressable onPress={openCoverDialog} disabled={coverGenerating} style={({ pressed }) => [styles.generateCover, { borderColor: colors.primary, backgroundColor: `${colors.primary}12`, opacity: coverGenerating || pressed ? 0.62 : 1 }]}><MaterialIcons name={coverGenerating ? "hourglass-top" : "auto-awesome"} size={19} color={colors.primary} /><View style={styles.generateCopy}><Text style={[styles.generateTitle, { color: colors.primary }]}>{coverGenerating ? "Bezplatná AI vytváří 16:9 obal…" : "Vygenerovat obrázek skladby"}</Text><Text style={[styles.generateText, { color: colors.muted }]}>{songId ? "16:9 obraz s pevně vloženým Temney, albem a názvem skladby." : "Nejprve skladbu ulož, pak můžeš vytvořit obal."}</Text></View></Pressable></View>
+    <View style={styles.coverBlock}><Pressable onPress={() => void uploadCover()} style={({ pressed }) => [styles.cover, { borderColor: colors.border, backgroundColor: colors.surface, opacity: pressed ? 0.72 : 1 }]}>{form.coverUrl ? <Image source={{ uri: form.coverUrl }} style={styles.coverImage} resizeMode="contain" /> : <><View style={[styles.coverIcon, { backgroundColor: `${colors.primary}20` }]}><MaterialIcons name="add-photo-alternate" size={25} color={colors.primary} /></View><Text style={[styles.coverTitle, { color: colors.foreground }]}>Přidat vlastní obrázek skladby</Text><Text style={[styles.coverText, { color: colors.muted }]}>Celá kompozice bez ořezu v 16:9 pro katalog i YouTube video.</Text></>}</Pressable><Pressable onPress={openCoverDialog} disabled={coverGenerating} style={({ pressed }) => [styles.generateCover, { borderColor: colors.primary, backgroundColor: `${colors.primary}12`, opacity: coverGenerating || pressed ? 0.62 : 1 }]}><MaterialIcons name={coverGenerating ? "hourglass-top" : "auto-awesome"} size={19} color={colors.primary} /><View style={styles.generateCopy}><Text style={[styles.generateTitle, { color: colors.primary }]}>{coverGenerating ? "Bezplatná AI vytváří 16:9 obal…" : "Vygenerovat obrázek skladby"}</Text><Text style={[styles.generateText, { color: colors.muted }]}>{songId ? "16:9 obraz s pevně vloženým Temney, albem a názvem skladby." : "Nejprve skladbu ulož, pak můžeš vytvořit obal."}</Text></View></Pressable><Pressable onPress={() => void uploadVideo()} style={({ pressed }) => [styles.generateCover, { borderColor: colors.border, backgroundColor: `${colors.muted}12`, opacity: pressed ? 0.62 : 1 }]}><MaterialIcons name={form.sourceVideoStorageKey ? "movie" : "video-library"} size={19} color={colors.muted} /><View style={styles.generateCopy}><Text style={[styles.generateTitle, { color: colors.muted }]}>{form.sourceVideoStorageKey ? "Video skladby je nahrané" : "Nahrát video místo obrázku"}</Text><Text style={[styles.generateText, { color: colors.muted }]}>Z krátkého MP4 udělá render smyčku přes celou skladbu.</Text></View></Pressable></View>
     <Field label="Název skladby" value={form.title} onChangeText={(title) => setForm((current) => ({ ...current, title }))} placeholder="Např. Noční signál" autoFocus={!songId} colors={colors} />
     <SectionTitle title="Album" />
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.albumChips}><AlbumChip active={!form.albumId} label="Bez alba" onPress={() => setForm((current) => ({ ...current, albumId: null }))} />{snapshot.data?.albums.map((album) => <AlbumChip key={album.id} active={form.albumId === album.id} label={album.name} onPress={() => setForm((current) => ({ ...current, albumId: album.id }))} />)}</ScrollView>

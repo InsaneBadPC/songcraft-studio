@@ -43,6 +43,7 @@ export type StudioSong = {
   notes: string | null;
   coverStorageKey: string | null;
   coverUrl: string | null;
+  sourceVideoStorageKey: string | null;
   youtubeDescription: string | null;
   youtubeTags: string | null;
   isPublished: boolean;
@@ -115,7 +116,7 @@ const assert = <T>(data: T | null, error: { message: string } | null): T => {
 
 const albumFromRow = async (row: any): Promise<StudioAlbum> => ({ id: row.id, userId: row.user_id, name: row.name, description: row.description, releaseYear: row.release_year, coverStorageKey: row.cover_path, coverUrl: await signedUrl(row.cover_path, row.user_id), sortOrder: row.sort_order, createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
 const documentFromRow = async (row: any): Promise<StudioDocument> => ({ id: row.id, userId: row.user_id, albumId: row.album_id, title: row.title, stylePrompt: row.style_prompt, lyrics: row.lyrics, notes: row.notes, coverStorageKey: row.cover_path, coverUrl: await signedUrl(row.cover_path, row.user_id), status: row.status === "complete" ? "complete" : "draft", completedAt: mapTime(row.completed_at), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
-const songFromRow = async (row: any): Promise<StudioSong> => ({ id: row.id, userId: row.user_id, albumId: row.album_id, sourceDocumentId: row.source_lyric_id, title: row.title, stylePrompt: row.style_prompt, stylePrompts: songStylePrompts(row), lyrics: row.lyrics, notes: row.notes, coverStorageKey: row.cover_path, coverUrl: await signedUrl(row.cover_path, row.user_id), youtubeDescription: row.youtube_description ?? null, youtubeTags: row.youtube_tags ?? null, isPublished: Boolean(row.is_published), publishedAt: mapTime(row.published_at), publishedVideoId: row.published_video_id ?? null, completedAt: new Date(row.completed_at), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
+const songFromRow = async (row: any): Promise<StudioSong> => ({ id: row.id, userId: row.user_id, albumId: row.album_id, sourceDocumentId: row.source_lyric_id, title: row.title, stylePrompt: row.style_prompt, stylePrompts: songStylePrompts(row), lyrics: row.lyrics, notes: row.notes, coverStorageKey: row.cover_path, coverUrl: await signedUrl(row.cover_path, row.user_id), sourceVideoStorageKey: row.source_video_path ?? null, youtubeDescription: row.youtube_description ?? null, youtubeTags: row.youtube_tags ?? null, isPublished: Boolean(row.is_published), publishedAt: mapTime(row.published_at), publishedVideoId: row.published_video_id ?? null, completedAt: new Date(row.completed_at), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) });
 const versionFromRow = async (row: any): Promise<StudioVersion> => {
   const storageUrl = await signedUrl(row.storage_path, row.user_id);
   const taggedStorageUrl = await signedUrl(row.tagged_storage_path, row.user_id);
@@ -148,7 +149,7 @@ export async function getExternalStudioSnapshot(): Promise<StudioSnapshot> {
   };
 }
 
-export async function uploadToExternalStorage(input: { folder: "covers" | "audio"; fileName: string; contentType: string; base64?: string; bytes?: ArrayBuffer }) {
+export async function uploadToExternalStorage(input: { folder: "covers" | "audio" | "videos"; fileName: string; contentType: string; base64?: string; bytes?: ArrayBuffer }) {
   const user = await owner();
   const bytes = input.bytes
     ? new Uint8Array(input.bytes)
@@ -293,17 +294,21 @@ export async function completeExternalDocument(id: string) {
   return assert(data, error) as string;
 }
 
-export async function createExternalSong(input: { title: string; albumId?: string | null; stylePrompt?: string | null; stylePrompts?: string[]; lyrics?: string | null; notes?: string | null; coverStorageKey?: string | null; sourceDocumentId?: string | null }) {
+export async function createExternalSong(input: { title: string; albumId?: string | null; stylePrompt?: string | null; stylePrompts?: string[]; lyrics?: string | null; notes?: string | null; coverStorageKey?: string | null; sourceVideoStorageKey?: string | null; sourceDocumentId?: string | null }) {
   const user = await owner();
   const prompts = (input.stylePrompts ?? []).map((entry) => entry.trim()).filter(Boolean);
-  const { data, error } = await supabase.from("sc_songs").insert({ user_id: user.id, title: input.title, album_id: input.albumId ?? null, source_lyric_id: input.sourceDocumentId ?? null, style_prompt: input.stylePrompt ?? prompts[0] ?? null, style_prompts: prompts, lyrics: input.lyrics ?? null, notes: input.notes ?? null, cover_path: ownedOptionalPath(user.id, input.coverStorageKey) }).select("id").single();
+  const coverPath = input.coverStorageKey === undefined ? undefined : ownedOptionalPath(user.id, input.coverStorageKey);
+  const videoPath = input.sourceVideoStorageKey === undefined ? undefined : ownedOptionalPath(user.id, input.sourceVideoStorageKey);
+  const { data, error } = await supabase.from("sc_songs").insert({ user_id: user.id, title: input.title, album_id: input.albumId ?? null, ...(coverPath !== undefined ? { cover_path: coverPath } : {}), ...(videoPath !== undefined ? { source_video_path: videoPath } : {}), source_lyric_id: input.sourceDocumentId ?? null, style_prompt: input.stylePrompt ?? prompts[0] ?? null, style_prompts: prompts, lyrics: input.lyrics ?? null, notes: input.notes ?? null, cover_path: ownedOptionalPath(user.id, input.coverStorageKey) }).select("id").single();
   return assert(data, error).id;
 }
 
-export async function updateExternalSong(input: { id: string; title?: string; albumId?: string | null; stylePrompt?: string | null; stylePrompts?: string[]; lyrics?: string | null; notes?: string | null; coverStorageKey?: string | null; youtubeDescription?: string | null; youtubeTags?: string | null }) {
+export async function updateExternalSong(input: { id: string; title?: string; albumId?: string | null; stylePrompt?: string | null; stylePrompts?: string[]; lyrics?: string | null; notes?: string | null; coverStorageKey?: string | null; sourceVideoStorageKey?: string | null; youtubeDescription?: string | null; youtubeTags?: string | null }) {
   const user = await owner();
   const prompts = input.stylePrompts === undefined ? undefined : input.stylePrompts.map((entry) => entry.trim()).filter(Boolean);
   const coverPath = input.coverStorageKey === undefined ? undefined : ownedOptionalPath(user.id, input.coverStorageKey);
+  // Nahrane MP4, ze ktereho render udela smycku pres celou skladbu.
+  const videoPath = input.sourceVideoStorageKey === undefined ? undefined : ownedOptionalPath(user.id, input.sourceVideoStorageKey);
   const { error } = await supabase.from("sc_songs").update({
     ...(input.title !== undefined ? { title: input.title } : {}),
     ...(input.albumId !== undefined ? { album_id: input.albumId } : {}),
@@ -311,6 +316,7 @@ export async function updateExternalSong(input: { id: string; title?: string; al
     ...(input.lyrics !== undefined ? { lyrics: input.lyrics } : {}),
     ...(input.notes !== undefined ? { notes: input.notes } : {}),
     ...(coverPath !== undefined ? { cover_path: coverPath } : {}),
+    ...(videoPath !== undefined ? { source_video_path: videoPath } : {}),
     ...(input.youtubeDescription !== undefined ? { youtube_description: input.youtubeDescription } : {}),
     ...(input.youtubeTags !== undefined ? { youtube_tags: input.youtubeTags } : {}),
   }).eq("id", input.id).eq("user_id", user.id);
