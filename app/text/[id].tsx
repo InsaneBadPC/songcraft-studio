@@ -9,7 +9,6 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { pickImage } from "@/lib/pick-media";
-import { assetToBase64 } from "@/lib/file-base64";
 import { clearDraft, loadDraft, shouldRestoreDraft, useDraftStorage } from "@/lib/use-draft-storage";
 import { trpc } from "@/lib/trpc";
 import { useUndoableText } from "@/lib/use-undoable-text";

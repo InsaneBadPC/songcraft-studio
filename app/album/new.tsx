@@ -7,7 +7,6 @@ import { IconButton, PrimaryButton, resolveAssetUrl } from "@/components/studio-
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 import { pickImage } from "@/lib/pick-media";
-import { assetToBase64 } from "@/lib/file-base64";
 import { trpc } from "@/lib/trpc";
 
 export default function NewAlbumScreen() {

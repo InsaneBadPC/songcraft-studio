@@ -7,7 +7,6 @@ export const STORAGE_LIMITS = {
   video: 50 * 1024 * 1024,
 } as const;
 
-const COVER_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp3", "audio/mp4", "audio/aac", "audio/x-m4a"]);
 
 export type StorageFolder = "covers" | "audio" | "videos";
