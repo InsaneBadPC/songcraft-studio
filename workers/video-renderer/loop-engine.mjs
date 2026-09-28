@@ -471,12 +471,16 @@ export async function buildLoopVideo(options) {
       + `gblur=sigma=24,eq=brightness=-0.14:saturation=0.55[bgb];`
       + `[fg]scale=${dims.w}:-2,pad=${dims.w}:${dims.h}:(ow-iw)/2:(oh-ih)/2:color=black[fgp];`
       + `[bgb][fgp]overlay=0:0,format=yuv420p[v]`
-    : `[0:v]null[v]`;
+    : `[0:v]null[v]`; // 16:9 graf nepoužíváme, streamcopy s ním nesmí
+  // Pro 16:9 se žádný filtr nepoužije: streamcopy a filtergraph se nesmí
+  // kombinovat ("Streamcopy requested for output stream fed from a complex
+  // filtergraph"). Pro 9:16 jde přes graf a video se překóduje.
   await ffmpeg(["-y", "-i", joined, "-i", audio,
-    "-filter_complex", fit, "-map", "[v]", "-map", "1:a",
     ...(vertical
-      ? ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", String(FPS)]
-      : ["-c:v", "copy"]),
+      ? ["-filter_complex", fit, "-map", "[v]", "-map", "1:a",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+        "-r", String(FPS)]
+      : ["-map", "0:v", "-map", "1:a", "-c:v", "copy"]),
     "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", out]);
   if (process.env.LOOP_KEEP_SEGMENTS !== "1") {
     for (const file of parts) await rm(file, { force: true });
