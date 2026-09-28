@@ -140,6 +140,35 @@ function randomFor(seed, state0) {
   next.state = () => state;
   return next;
 }
+/**
+ * Seamless zdroj.
+ *
+ * Zdrojové video nemusí jít do smyčky (u Luma klipu se poslední a první snímek
+ * liší) a lineární průchod delší než zbytek zdroje se na něm zasekne o tvrdý
+ * skok. Proto si jednou vyrobíme crossfade smyčku a použijeme ji jako pracovní
+ * zdroj: je plynulá na svém začátku i konci, takže se na ni dá bezpečně
+ * navazovat i vracet. Třikrát zopakovaná smyčka dává i víc místa pro náhodné
+ * starty průchodů.
+ */
+async function buildSeamlessBase(video, out, frameCount) {
+  const fade = Math.max(6, Math.min(Math.round(FPS), Math.floor(frameCount / 3)));
+  const main = Math.max(12, frameCount - fade);
+  const loopUnit = path.join(path.dirname(out), ".loopunit.mp4");
+  try {
+    await ffmpeg(["-threads", "6", "-i", video, "-filter_complex",
+      `[0:v]trim=start_frame=0:end_frame=${main},setpts=PTS-STARTPTS[a];`
+      + `[0:v]trim=start_frame=${main}:end_frame=${frameCount},setpts=PTS-STARTPTS[b];`
+      + `[a][b]xfade=transition=fade:duration=${(fade / FPS).toFixed(4)}`
+      + `:offset=${((main - fade) / FPS).toFixed(4)},format=yuv420p[v]`,
+      "-map", "[v]", "-frames:v", String(main), ...ENCODE, "-y", loopUnit]);
+    await ffmpeg(["-threads", "6", "-stream_loop", "3", "-i", loopUnit,
+      "-map", "0:v", "-frames:v", String(main * 3), ...ENCODE, "-y", out]);
+  } finally {
+    await rm(loopUnit, { force: true });
+  }
+  return main * 3;
+}
+
 const pick = (rand, list) => list[Math.floor(rand() * list.length) % list.length];
 
 /**
@@ -369,8 +398,14 @@ export async function buildLoopVideo(options) {
       "-frames:v", String(FPS * 5), ...ENCODE, "-y", source,
     ]);
   }
-  const frameCount = await probeFrameCount(source);
-  const calm = sourceVideo ? await calmFrames(sourceVideo, 10) : [0];
+  const rawFrameCount = await probeFrameCount(source);
+  // Průchody jedou přes seamless zdroj, jinak se lineární průchod delší než
+  // zbytek zdroje zasekne o tvrdý skok přes konec klipu.
+  const smooth = path.join(workDir, "smooth.mp4");
+  const frameCount = await buildSeamlessBase(source, smooth, rawFrameCount);
+  source = smooth;
+  const calm = (await calmFrames(source, 10)).filter((c) => c < frameCount);
+  onProgress(`seamless zdroj: ${rawFrameCount} -> ${frameCount} snímků (crossfade smyčka x3)`);
   const passes = planLoop({ duration, frameCount, calm, seed });
   const counts = passes.reduce((a, p) => ({ ...a, [p.tech]: (a[p.tech] || 0) + 1 }), {});
   const blends = passes.filter((p) => p.join === "blend").length;
@@ -425,8 +460,24 @@ export async function buildLoopVideo(options) {
   await writeFile(list, parts.map((f) => `file '${f}'\n`).join(""));
   const joined = path.join(workDir, "joined.mp4");
   await ffmpeg(["-y", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", joined]);
-  await ffmpeg(["-y", "-i", joined, "-i", audio, "-map", "0:v", "-map", "1:a",
-    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", out]);
+  // Průchody se vždy skládají na 16:9 pracovní ploše, aby obě varianty měly
+  // stejný vstup. Cílový poměr stran se řeší až tady, jedním průchodem.
+  const vertical = aspect === "9:16";
+  const dims = vertical ? { w: 1080, h: 1920 } : { w: W, h: H };
+  // celý graf včetně vstupních labelů, jinak se vstup vloží dvakrát
+  const fit = vertical
+    ? `[0:v]split=2[fg][bg];`
+      + `[bg]scale=${dims.w}:${dims.h}:force_original_aspect_ratio=increase,crop=${dims.w}:${dims.h},`
+      + `gblur=sigma=24,eq=brightness=-0.14:saturation=0.55[bgb];`
+      + `[fg]scale=${dims.w}:-2,pad=${dims.w}:${dims.h}:(ow-iw)/2:(oh-ih)/2:color=black[fgp];`
+      + `[bgb][fgp]overlay=0:0,format=yuv420p[v]`
+    : `[0:v]null[v]`;
+  await ffmpeg(["-y", "-i", joined, "-i", audio,
+    "-filter_complex", fit, "-map", "[v]", "-map", "1:a",
+    ...(vertical
+      ? ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", String(FPS)]
+      : ["-c:v", "copy"]),
+    "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", out]);
   if (process.env.LOOP_KEEP_SEGMENTS !== "1") {
     for (const file of parts) await rm(file, { force: true });
   }

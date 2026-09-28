@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const worker = readFileSync("workers/video-renderer/worker.mjs", "utf8");
+const engine = readFileSync("workers/video-renderer/loop-engine.mjs", "utf8");
+
 
 describe("Oracle video worker contract", () => {
   it("reads the persisted prompt_used column and all three modes", () => {
@@ -59,5 +61,31 @@ describe("Oracle video worker contract", () => {
     const known = ['"static_cover"', '"image_animation"', '"full_scenes"', '"video_loop"'];
     for (const type of known) expect(worker).toContain(`type === ${type}`);
     expect(worker).toContain("Unknown video type");
+  });
+
+  it("runs every pass over a seamless source", () => {
+    // Regrese: zdrojové video neni smycka, takze linearni pruchod delsii nez
+    // zbytek zdroje se zasekl o tvrdy skok (po 121 snimcich).
+    expect(engine).toContain("buildSeamlessBase");
+    expect(engine).toContain("smooth.mp4");
+    expect(engine).toContain("xfade=transition=fade");
+    // prichody nesmi kreslit primo ze zdroje
+    expect(engine).toContain("source = smooth;");
+  });
+
+  it("supports both aspect ratios from the same pass render", () => {
+    expect(engine).toContain('aspect !== "16:9" && aspect !== "9:16"');
+    expect(engine).toContain("{ w: 1080, h: 1920 }");
+    expect(engine).toContain("pad=");
+    // 16:9 nesmí jít přes filtr, jinak by se zbytečně překódoval
+    expect(engine).toContain("null[v]");
+  });
+
+  it("declares a plan the join logic can satisfy", () => {
+    // kazdy prechod spotrebuje T snimku, takze plan musi mit rezervu
+    expect(engine).toContain("deficit");
+    expect(engine).toContain("joinFrames");
+    // 'cut' musi pokracovat presne od konce predchoziho pruchodu
+    expect(engine).toContain("endFrame");
   });
 });
