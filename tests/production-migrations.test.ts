@@ -5,6 +5,7 @@ const renderTypes = readFileSync("supabase/migrations/20260925000000_agent_video
 const confirmation = readFileSync("supabase/migrations/20260925130000_agent_confirmations.sql", "utf8");
 const oauth = readFileSync("supabase/migrations/20260925150000_youtube_oauth_states.sql", "utf8");
 const leases = readFileSync("supabase/migrations/20260925140000_video_worker_leases.sql", "utf8");
+const videoLoop = readFileSync("supabase/migrations/20260928120000_agent_video_loop_mode.sql", "utf8");
 
 describe("production workflow migrations", () => {
   it("targets the render type constraint by column, not by text matching", () => {
@@ -29,5 +30,25 @@ describe("production workflow migrations", () => {
     expect(leases).toContain("attempt_count integer not null default 0");
     expect(leases).toContain("lease_expires_at timestamptz");
     expect(leases).toContain("agent_videos_attempts_check");
+  });
+
+  it("extends the render types instead of weakening the constraint", () => {
+    // video_loop se přidává do existující hlídky, nesmí se mazat
+    expect(videoLoop).toContain("agent_videos_type_check");
+    expect(videoLoop).toContain("'static_cover', 'image_animation', 'full_scenes', 'video_loop'");
+    expect(videoLoop).toContain("agent_videos_mode_check");
+    expect(videoLoop).not.toMatch(/drop constraint if exists agent_videos_type_check\s*;\s*alter table[^;]*add constraint agent_videos_type_check\s+check \(\s*type in \('static_cover'\)/);
+  });
+
+  it("migrates legacy render values instead of leaving rows that fail the check", () => {
+    expect(videoLoop).toContain("set mode = 'video_loop', type = 'video_loop'");
+    expect(videoLoop).toContain("where mode = 'loop_video' or type in ('short', 'lyric_video')");
+    expect(videoLoop).toContain("set backend = 'ffmpeg'");
+    expect(videoLoop).toContain("where backend = 'vm_loop'");
+  });
+
+  it("fails the migration closed when illegal values remain", () => {
+    expect(videoLoop).toContain("raise exception");
+    expect(videoLoop).toContain("agent_videos má neplatné hodnoty po migraci");
   });
 });

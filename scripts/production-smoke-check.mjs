@@ -28,6 +28,7 @@ const migrations = [
   "20260925150000_youtube_oauth_states.sql",
   "20260925160000_publication_server_only.sql",
   "20260925170000_core_storage_paths.sql",
+  "20260928120000_agent_video_loop_mode.sql",
 ];
 
 for (const relative of [...required, ...migrations.map((name) => `supabase/migrations/${name}`)]) {

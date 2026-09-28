@@ -95,6 +95,15 @@ const toolDefs = [
     parameters: { type: "object", properties: {} },
   },
   {
+    name: "check_video_status",
+    description:
+      "Check render status of the user's videos. Returns id, song, mode, status and error message. Use after make_music_video, make_short or render_video instead of guessing.",
+    parameters: {
+      type: "object",
+      properties: { videoId: { type: "string" } },
+    },
+  },
+  {
     name: "extract_lyric_themes",
     description: "Extract 3-6 visual motifs from a song lyric.",
     parameters: {
@@ -732,6 +741,24 @@ async function dispatch(
     await log(admin, userId, name, "success", { count: songs.length });
     return { status: "success", count: songs.length, songs };
   }
+  if (name === "check_video_status") {
+    const videoId = typeof args.videoId === "string" ? args.videoId.trim() : "";
+    let query = admin.from("agent_videos").select(
+      "id,song_id,mode,type,aspect,render_status,error_message,output_path,updated_at",
+    ).eq("user_id", userId).order("updated_at", { ascending: false }).limit(10);
+    if (videoId) query = query.eq("id", videoId);
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    const videos = data ?? [];
+    const finished = videos.filter((video: any) => video.render_status === "ready" || video.render_status === "failed");
+    await log(admin, userId, name, "success", { count: videos.length, filtered: Boolean(videoId) });
+    return {
+      status: "success",
+      count: videos.length,
+      allDone: finished.length === videos.length,
+      videos,
+    };
+  }
   if (name === "list_lyric_drafts") {
     let query = admin.from("sc_lyrics").select(
       "id,title,status,updated_at,lyrics",
@@ -1013,7 +1040,7 @@ async function dispatch(
       "sc_songs",
       String(args.songId),
       userId,
-      "id,title,lyrics,style_prompt,cover_path",
+      "id,title,lyrics,style_prompt,cover_path,source_video_path",
     );
     if (!song.cover_path) {
       throw new Error(
@@ -1052,37 +1079,19 @@ async function dispatch(
     ) throw new Error("Finální MP3 nemá platnou cestu vlastníka.");
 
     // Nahrane video: nepotrebujeme plan pohybu, sam se smycka.
+    const hasSourceVideo = typeof song.source_video_path === "string" &&
+      song.source_video_path.startsWith(`${userId}/`) &&
+      !song.source_video_path.includes("..");
     if (hasSourceVideo) {
-      const { data: versions0, error: verErr0 } = await admin.from(
-        "sc_audio_versions",
-      )
-        .select("id,tagged_storage_path,original_storage_path,storage_path")
-        .eq("song_id", song.id).eq("user_id", userId).eq("is_final", true)
-        .order("is_primary", { ascending: false }).order("rating", {
-          ascending: false,
-        }).limit(1);
-      if (verErr0 || !versions0?.[0]) {
-        throw new Error("Pro render musí být vybraná finální MP3 verze.");
-      }
-      const v0 = versions0[0] as {
-        tagged_storage_path?: string | null;
-        original_storage_path?: string | null;
-        storage_path?: string | null;
-      };
-      const audio0 = v0.tagged_storage_path || v0.original_storage_path ||
-        v0.storage_path;
-      if (typeof audio0 !== "string" || !audio0.startsWith(`${userId}/`)) {
-        throw new Error("Finální MP3 nemá platnou cestu vlastníka.");
-      }
       const { data: looped, error: loopErr } = await admin.from("agent_videos")
         .insert({
           user_id: userId,
           song_id: song.id,
-          type: isShort ? "short" : "lyric_video",
-          mode: "loop_video",
-          backend: "vm_loop",
+          type: "video_loop",
+          mode: "video_loop",
+          backend: "ffmpeg",
           aspect: isShort ? "9:16" : "16:9",
-          audio_storage_path: audio0,
+          audio_storage_path: audioPath,
           prompt_used: "smyčka z nahraného videa",
           motion_prompt: null,
           source_video_path: song.source_video_path,
@@ -1169,12 +1178,17 @@ async function dispatch(
     if (recipeError) throw new Error(recipeError.message);
 
     const aspect = isShort ? "9:16" : "16:9";
+    // Kanonický render type musí být jeden ze čtyř, které worker umí a které
+    // povoluje agent_videos_type_check. Pohyb z vize se renderuje přes
+    // image_animation (dashboard I2V z obalu + prompt); původní
+    // short/lyric_video/living_motion/vm_living porušovalo CHECK a job skončil
+    // v failed bez toho, aby se na něj vůbec dostal worker.
     const { data, error } = await admin.from("agent_videos").insert({
       user_id: userId,
       song_id: song.id,
-      type: isShort ? "short" : "lyric_video",
-      mode: "living_motion",
-      backend: "vm_living",
+      type: "image_animation",
+      mode: "image_animation",
+      backend: "vm_image_animation",
       aspect,
       audio_storage_path: audioPath,
       prompt_used: motionPrompt,
@@ -1357,6 +1371,7 @@ async function handle(request: Request): Promise<Response> {
 PLÁN POHYBU A VIDEO — pravidla, která nesmíš porušit:
 - Když uživatel napíše, která píseň a CO se má na jejím obrázku rozpohybovat (např. "u téhle písně rozhybej postavu", "roztoč to kolo", "nech světla blikat"), použij make_music_video a PŘEDEJ jeho vlastní slova jako motionPrompt. NIC si nevymýšlej: žádný kouř, blesky, déšť ani blikání, o co uživatel nežádal. Agent uvidí obrázek a sám najde, kde ta věc je.
 - Když uživatel řekne "udělej z toho short" / "vertical" / "krátké video", použij make_short.
+- Když má píseň nahrané vlastní video, make_music_video i make_short místo plánu pohybu udělají plynulou smyčku z toho videa přes celou skladbu. Není třeba psát motionPrompt a nesmíš tvrdit, že jsi vymyslel vlastní pohyb.
 - make_music_video vrací co se bude hýbat. To uživateli řekni slovy, ne jsonem.
 - Render je asynchronní. Neříkej "hotovo", ale "rozjelo se, hlásím se po dokončení", a pak zkontroluj stav (check_video_status).
 - Publikování: nikdy nepublikuj bez výslovného "ok" uživatele. Nejdřív připrav koncept (generate_metadata + schedule_publication jako draft), ukaž uživateli náhled a titulky, a publikuj až když řekne ano. publish_to_youtube vždy vyžaduje potvrzení.`;

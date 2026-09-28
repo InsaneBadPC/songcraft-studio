@@ -12,6 +12,8 @@
  *                      → poll GET /api/runs → stáhne hotové mp4 z /api/runs/{id}/download
  *   full_scenes      → dashboard POST /api/generate mode=full_scenes (audio + artwork
  *                      jako referenční postava + prompt) → poll → stáhne mp4 → Storage → ready
+ *   video_loop       → lokální ffmpeg (source_video_path → crossfade smyčka na délku audia;
+ *                      16:9 = 1280x720, 9:16 = 1080x1920 s rozmazaným pozadím)
  *
  * Dashboard (FastAPI, Basic auth z env DASHBOARD_USER/DASHBOARD_PASSWORD) běží NA STEJNÉM
  * Oracle VM jako tento worker ⇒ volá se lokálně 127.0.0.1:8080, bez otevírání portů ven.
@@ -78,6 +80,87 @@ async function prepareUpload(file) {
   ], { maxBuffer: 10 * 1024 * 1024 });
   const size = (await stat(target)).size;
   if (size > maxUploadBytes) throw new Error(`Compressed video is still too large: ${size} bytes`);
+  return target;
+}
+
+/** Délka souboru v sekundách z ffprobe (fail-closed: bez čísla nelze sestavit smyčku). */
+async function probeDuration(file) {
+  const { stdout } = await exec("ffprobe", [
+    "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file,
+  ], { maxBuffer: 1024 * 1024 });
+  const seconds = Number(String(stdout).trim());
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    throw new Error(`ffprobe returned no usable duration for ${path.basename(file)}`);
+  }
+  return seconds;
+}
+
+/**
+ * Plynulá smyčka: crossfade spojí konec klipu se začátkem, takže opakování
+ * jednotky nemá viditelný střih. Průchod 1 složí jednotku, průchod 2 ji opakuje
+ * na délku audia. Rozměry cílového rámu se řeší až v průchodu 2, aby se
+ * nedeformovalo xfade počítání.
+ */
+async function renderSeamlessVideoLoop(source, audio, output, aspect) {
+  const dims = aspect === "9:16" ? { w: 1080, h: 1920 } : { w: 1280, h: 720 };
+  const audioDuration = await probeDuration(audio);
+  const sourceDuration = await probeDuration(source);
+  // Fade nesmí přesáhnout třetinu klipu, jinak by zbylo málo pohybu.
+  const fade = Math.min(1, Math.max(0.25, sourceDuration / 3));
+  const main = sourceDuration - fade;
+  const unitDuration = main + fade - fade;
+  if (unitDuration <= 0.4) throw new Error("Nahrané video je příliš krátké pro smyčku");
+  const offset = main - fade;
+  const unit = `${output}.unit.mp4`;
+
+  await exec("ffmpeg", [
+    "-y", "-i", source,
+    "-filter_complex",
+    `[0:v]split=2[va][vb];[va]trim=0:${main.toFixed(6)},setpts=PTS-STARTPTS[a];` +
+      `[vb]trim=${main.toFixed(6)}:${sourceDuration.toFixed(6)},setpts=PTS-STARTPTS[b];` +
+      `[a][b]xfade=transition=fade:duration=${fade.toFixed(6)}:offset=${Math.max(0, offset).toFixed(6)},format=yuv420p[v]`,
+    "-map", "[v]", "-an",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+    unit,
+  ], { maxBuffer: 10 * 1024 * 1024 });
+
+  const loops = Math.ceil(audioDuration / unitDuration) + 1;
+  const { w, h } = dims;
+  await exec("ffmpeg", [
+    "-y", "-stream_loop", String(loops), "-i", unit, "-i", audio,
+    "-filter_complex",
+    `[0:v]split=2[fg][bg];` +
+      `[bg]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},gblur=sigma=24,eq=brightness=-0.12:saturation=0.6[bgb];` +
+      `[fg]scale=${w}:-2,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=black[fgp];` +
+      `[bgb][fgp]overlay=0:0,format=yuv420p[v]`,
+    "-map", "[v]", "-map", "1:a",
+    "-t", audioDuration.toFixed(3),
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", output,
+  ], { maxBuffer: 10 * 1024 * 1024 });
+
+  await rm(unit, { force: true });
+}
+
+/**
+ * Dashboard (I2V i scény) vrací 16:9. Když job hlásí 9:16, převedeme výstup na
+ * 1080x1920 s rozmazaným pozadím, aby šel záznam v agent_videos.aspect odrážel
+ * skutečný výstup. Bez toho by short v DB tvrdil svislé a soubor byl vodorovný.
+ */
+async function fitToAspect(file, aspect) {
+  if (aspect !== "9:16") return file;
+  const target = `${file}.vertical.mp4`;
+  await exec("ffmpeg", [
+    "-y", "-i", file,
+    "-filter_complex",
+    `[0:v]split=2[fg][bg];` +
+      `[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=24,eq=brightness=-0.12:saturation=0.6[bgb];` +
+      `[fg]scale=1080:-2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black[fgp];` +
+      `[bgb][fgp]overlay=0:0,format=yuv420p[v]`,
+    "-map", "[v]", "-map", "0:a?",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+    "-c:a", "copy", "-movflags", "+faststart", target,
+  ], { maxBuffer: 10 * 1024 * 1024 });
   return target;
 }
 
@@ -217,6 +300,18 @@ async function processJob(job) {
       const record = await dashGenerate(mode, audio, artwork, song.title, job.prompt_used || "");
       await dashPoll(record.run_id);
       await download(`${dashboardUrl}/api/runs/${record.run_id}/download`, output, { Authorization: dashAuth() });
+      const fitted = await fitToAspect(output, job.aspect);
+      if (fitted !== output) {
+        await writeFile(output, await readFile(fitted));
+        await rm(fitted, { force: true });
+      }
+      await assertPlayableVideo(output);
+    } else if (type === "video_loop") {
+      // === větev D: plynulá smyčka z nahráného videa přes celou skladbu ===
+      const sourceVideo = ownedPath(job.user_id, job.source_video_path);
+      const source = path.join(work, "source.mp4");
+      await download(await signed(sourceVideo), source);
+      await renderSeamlessVideoLoop(source, audio, output, job.aspect);
       await assertPlayableVideo(output);
     } else {
       throw new Error(`Unknown video type: ${type}`);
