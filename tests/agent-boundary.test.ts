@@ -29,10 +29,16 @@ describe("agent and publication boundaries", () => {
   it("never references an undefined identifier in the uploaded-video branch", () => {
     // Regrese: hasSourceVideo bylo použité, ale nikdy nedefinované, takže
     // make_music_video i make_short končily ReferenceError (chyba CI TS2304).
-    expect(orchestrator).toContain("const hasSourceVideo =");
+    // Definice musí existovat (původní stav: 0 definic, 1 použití → TS2304) a
+    // každý handler, který proměnnou zavádí, ji musí také použít.
+    const defines = orchestrator.match(/const hasSourceVideo =/g) ?? [];
     const uses = orchestrator.match(/hasSourceVideo/g) ?? [];
-    const defines = orchestrator.match(/const hasSourceVideo/g) ?? [];
-    expect(uses.length).toBe(defines.length + 1); // 1 definice + 1 použití
+    expect(defines.length).toBeGreaterThan(0);
+    expect(uses.length).toBeGreaterThan(defines.length);
+    for (const segment of orchestrator.split("if (name ===")) {
+      if (!segment.includes("hasSourceVideo")) continue;
+      expect(segment, "větev používá hasSourceVideo, ale nedefinuje ho").toContain("const hasSourceVideo =");
+    }
   });
 
   it("selects the source video column the loop branch depends on", () => {
@@ -66,6 +72,28 @@ describe("agent and publication boundaries", () => {
     const dispatched = orchestrator.match(/name === "check_video_status"/g) ?? [];
     expect(declared.length).toBe(1);
     expect(dispatched.length).toBe(1);
+  });
+
+  it("offers both video kinds to the agent through the loop engine", () => {
+    for (const tool of ["make_long_video", "make_short_video"]) {
+      expect(orchestrator, tool).toContain(`name: "${tool}"`);
+      expect(orchestrator, tool).toContain('type: "source_loop"');
+      expect(orchestrator, tool).toContain('backend: "ffmpeg"');
+    }
+    // 16:9 pro celé video, 9:16 pro short
+    expect(orchestrator).toContain('const aspect = isShort ? "9:16" : "16:9";');
+    // oba nástroje v jednom handleru, jinak by se logika rozdvojila
+    expect(orchestrator).toContain('if (name === "make_long_video" || name === "make_short_video")');
+    // finální MP3 i vlastnictví cesty zůstávají povinné
+    expect(orchestrator).toContain("Pro render musí být vybraná finální MP3 verze.");
+    expect(orchestrator).toContain("Finální MP3 nemá platnou cestu vlastníka.");
+  });
+
+  it("tells the model that video needs no invented motion prompt", () => {
+    const prompt = orchestrator.slice(orchestrator.indexOf("VIDEO — pravidla"));
+    expect(prompt).toContain("make_long_video");
+    expect(prompt).toContain("make_short_video");
+    expect(prompt).toContain("NEPIŠ motionPrompt");
   });
 
   it("keeps the web deploy token out of the repository", () => {

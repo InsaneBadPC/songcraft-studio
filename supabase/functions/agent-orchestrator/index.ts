@@ -195,6 +195,35 @@ const toolDefs = [
     },
   },
   {
+    name: "make_long_video",
+    description:
+      "Queue a full-length 16:9 music video for the whole song. The loop engine cuts the song's own video (or its artwork) into passes of random length and joins them with transitions that are never visible, so nothing visibly repeats. This is the DEFAULT video tool: use it whenever the user wants a video for a song, and use it again for the same song whenever they ask for a new cut. No motion prompt is needed and do not invent effects.",
+    parameters: {
+      type: "object",
+      properties: {
+        songId: { type: "string" },
+        note: {
+          type: "string",
+          description: "Volitelné: o čem má video být (jen pro hlediskový záznam)",
+        },
+      },
+      required: ["songId"],
+    },
+  },
+  {
+    name: "make_short_video",
+    description:
+      "Queue a 9:16 vertical clip for YouTube Shorts from a song, using the same loop engine as make_long_video. Use it whenever the user says short, vertical, Shorts, reels, or 'udelej z toho kratke video'. Returns a videoId; report the render as pending.",
+    parameters: {
+      type: "object",
+      properties: {
+        songId: { type: "string" },
+        note: { type: "string" },
+      },
+      required: ["songId"],
+    },
+  },
+  {
     name: "create_recommendation",
     description: "Save a strategic recommendation for the user.",
     parameters: {
@@ -1215,6 +1244,78 @@ async function dispatch(
       note: clip(planned.recipe.note, 300),
     };
   }
+  if (name === "make_long_video" || name === "make_short_video") {
+    const isShort = name === "make_short_video";
+    const song = await row(
+      admin,
+      "sc_songs",
+      String(args.songId),
+      userId,
+      "id,title,cover_path,album_id,source_video_path",
+    );
+    if (!song.cover_path && !song.source_video_path) {
+      throw new Error(
+        "Tato píseň nemá obal ani nahráté video. Nejdřív nahraj obraz, nebo video.",
+      );
+    }
+    // Finální audio určuje délku videa. Bez finální verze nemá smysl render.
+    const { data: versions, error: versionError } = await admin.from(
+      "sc_audio_versions",
+    )
+      .select("id,tagged_storage_path,original_storage_path,storage_path")
+      .eq("song_id", song.id).eq("user_id", userId).eq("is_final", true)
+      .order("is_primary", { ascending: false }).order("rating", {
+        ascending: false,
+      }).limit(1);
+    if (versionError || !versions?.[0]) {
+      throw new Error("Pro render musí být vybraná finální MP3 verze.");
+    }
+    const v = versions[0] as {
+      tagged_storage_path?: string | null;
+      original_storage_path?: string | null;
+      storage_path?: string | null;
+    };
+    const audioPath = v.tagged_storage_path || v.original_storage_path ||
+      v.storage_path;
+    if (
+      typeof audioPath !== "string" || !audioPath.startsWith(`${userId}/`) ||
+      audioPath.includes("..")
+    ) throw new Error("Finální MP3 nemá platnou cestu vlastníka.");
+
+    const hasSourceVideo = typeof song.source_video_path === "string" &&
+      song.source_video_path.startsWith(`${userId}/`) &&
+      !song.source_video_path.includes("..");
+    const aspect = isShort ? "9:16" : "16:9";
+    const { data, error } = await admin.from("agent_videos").insert({
+      user_id: userId,
+      song_id: song.id,
+      type: "source_loop",
+      mode: "source_loop",
+      backend: "ffmpeg",
+      aspect,
+      audio_storage_path: audioPath,
+      prompt_used: clip(args.note, 2_000) ||
+        (isShort ? "krátké svislé video" : "celé video na skladbu"),
+      motion_prompt: null,
+      source_video_path: hasSourceVideo ? song.source_video_path : null,
+      recipe_source: hasSourceVideo ? "uploaded_video" : "cover_artwork",
+      render_status: "queued",
+    }).select("id,render_status,mode,backend,aspect").single();
+    if (error || !data) {
+      throw new Error(error?.message || "Render se nepodařilo založit.");
+    }
+    await log(admin, userId, name, "success", {
+      videoId: data.id, aspect, source: hasSourceVideo ? "video" : "obal",
+    }, data.id);
+    return {
+      status: "queued",
+      videoId: data.id,
+      aspect: data.aspect,
+      zdroj: hasSourceVideo ? "nahráté video skladby" : "obal skladby",
+      hybe_se:
+        `Rozjelo se to. Video vznikne ze ${hasSourceVideo ? "nahrátého videa skladby" : "obalu skladby"}, dlouhé je jako skladba, průchody různě dlouhé a přechody nejsou vidět. Slíbeno, jak bude hotovo.`,
+    };
+  }
   if (name === "create_recommendation") {
     const { data, error } = await admin.from("agent_recommendations").insert({
       user_id: userId,
@@ -1368,9 +1469,11 @@ async function handle(request: Request): Promise<Response> {
   const system =
     `Jsi Temney Agent v SongCraft Studio. Odpovídej česky. Používej nástroje, když můžeš provést konkrétní bezpečný krok. Nikdy netvrď, že se akce stala, pokud nástroj nevrátil úspěch. Veřejné akce jsou vždy pending_confirmation. Character bible: ${CHARACTER_BIBLE}. Soukromá data patří pouze ověřenému user_id ${user.id}.;
 
-PLÁN POHYBU A VIDEO — pravidla, která nesmíš porušit:
-- Když uživatel napíše, která píseň a CO se má na jejím obrázku rozpohybovat (např. "u téhle písně rozhybej postavu", "roztoč to kolo", "nech světla blikat"), použij make_music_video a PŘEDEJ jeho vlastní slova jako motionPrompt. NIC si nevymýšlej: žádný kouř, blesky, déšť ani blikání, o co uživatel nežádal. Agent uvidí obrázek a sám najde, kde ta věc je.
-- Když uživatel řekne "udělej z toho short" / "vertical" / "krátké video", použij make_short.
+VIDEO — pravidla, která nesmíš porušit:
+- Video je default make_long_video. Když uživatel řekne "udělej k téhle písně video", použij ho. Engine si sám vybere délky průchodů i přechody, takže NEPIŠ motionPrompt a NIC nevymýšlej: žádný kouř, blesky, déšť ani blikání, o co uživatel nežádal.
+- Když uživatel řekne "short" / "vertical" / "Shorts" / "reels" / "kratke video", použij make_short_video (9:16).
+- Když řekne "udělej to znovu" nebo "chci jinou verzi", klidně použij make_long_video znovu: pokaždé vyjde jiné, protože engine skládá průchody náhodně.
+- make_music_video a make_short jsou jen starší cesta se zadaným motionPrompt. Použij je, jen když uživatel VÝSLOVNĚ řekne, co se má rozpohybovat, a chce přesně to. V takovém případě PŘEDEJ jeho vlastní slova a nic si nepřidávej.
 - Když má píseň nahrané vlastní video, make_music_video i make_short místo plánu pohybu udělají plynulou smyčku z toho videa přes celou skladbu. Není třeba psát motionPrompt a nesmíš tvrdit, že jsi vymyslel vlastní pohyb.
 - make_music_video vrací co se bude hýbat. To uživateli řekni slovy, ne jsonem.
 - Render je asynchronní. Neříkej "hotovo", ale "rozjelo se, hlásím se po dokončení", a pak zkontroluj stav (check_video_status).

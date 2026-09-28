@@ -17,6 +17,7 @@ const required = [
   "supabase/functions/youtube-oauth-callback/index.ts",
   "supabase/functions/youtube-publish-scheduler/index.ts",
   "workers/video-renderer/worker.mjs",
+  "workers/video-renderer/loop-engine.mjs",
 ];
 const migrations = [
   "20260925000000_agent_video_render_types.sql",
@@ -29,6 +30,7 @@ const migrations = [
   "20260925160000_publication_server_only.sql",
   "20260925170000_core_storage_paths.sql",
   "20260928120000_agent_video_loop_mode.sql",
+  "20260929000000_agent_video_source_loop.sql",
 ];
 
 for (const relative of [...required, ...migrations.map((name) => `supabase/migrations/${name}`)]) {

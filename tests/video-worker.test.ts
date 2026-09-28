@@ -42,6 +42,19 @@ describe("Oracle video worker contract", () => {
     expect(worker).toContain("pad=1080:1920");
   });
 
+  it("renders both video kinds with the loop engine", () => {
+    expect(worker).toContain('from "./loop-engine.mjs"');
+    expect(worker).toContain("buildLoopVideo");
+    // 16:9 i 9:16 z jednoho průchodu
+    expect(worker).toContain('aspect: job.aspect === "9:16" ? "9:16" : "16:9"');
+    // video skladby, jinak obal
+    expect(worker).toContain("job.source_video_path");
+    expect(worker).toContain("sourceImage");
+    // engine nesmí potřebovat dashboard
+    expect(worker.slice(worker.indexOf('type === "source_loop"'), worker.indexOf('type === "static_cover"')))
+      .not.toContain("dashGenerate");
+  });
+
   it("only knows render types the DB constraint allows", () => {
     const known = ['"static_cover"', '"image_animation"', '"full_scenes"', '"video_loop"'];
     for (const type of known) expect(worker).toContain(`type === ${type}`);

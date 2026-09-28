@@ -6,6 +6,7 @@ const confirmation = readFileSync("supabase/migrations/20260925130000_agent_conf
 const oauth = readFileSync("supabase/migrations/20260925150000_youtube_oauth_states.sql", "utf8");
 const leases = readFileSync("supabase/migrations/20260925140000_video_worker_leases.sql", "utf8");
 const videoLoop = readFileSync("supabase/migrations/20260928120000_agent_video_loop_mode.sql", "utf8");
+const sourceLoop = readFileSync("supabase/migrations/20260929000000_agent_video_source_loop.sql", "utf8");
 
 describe("production workflow migrations", () => {
   it("targets the render type constraint by column, not by text matching", () => {
@@ -50,6 +51,15 @@ describe("production workflow migrations", () => {
   it("fails the migration closed when illegal values remain", () => {
     expect(videoLoop).toContain("raise exception");
     expect(videoLoop).toContain("agent_videos má neplatné hodnoty po migraci");
+  });
+
+  it("adds source_loop as the primary render type instead of the dashboard modes", () => {
+    expect(sourceLoop).toContain("'static_cover', 'image_animation', 'full_scenes', 'video_loop', 'source_loop'");
+    expect(sourceLoop).toContain("agent_videos_type_check");
+    expect(sourceLoop).toContain("agent_videos_mode_check");
+    // staré hodnoty agenta se přemapují, ne zůstanou viset
+    expect(sourceLoop).toContain("set mode = 'source_loop', type = 'source_loop'");
+    expect(sourceLoop).toContain("raise exception");
   });
 
   it("never names a SQL function parameter after a reserved word", () => {

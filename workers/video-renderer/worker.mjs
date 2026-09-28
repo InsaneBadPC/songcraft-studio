@@ -12,8 +12,12 @@
  *                      → poll GET /api/runs → stáhne hotové mp4 z /api/runs/{id}/download
  *   full_scenes      → dashboard POST /api/generate mode=full_scenes (audio + artwork
  *                      jako referenční postava + prompt) → poll → stáhne mp4 → Storage → ready
- *   video_loop       → lokální ffmpeg (source_video_path → crossfade smyčka na délku audia;
- *                      16:9 = 1280x720, 9:16 = 1080x1920 s rozmazaným pozadím)
+ *   video_loop       → lokální ffmpeg (source_video_path → crossfade smyčka na délku audia)
+ *   source_loop      → loop engine (workers/video-renderer/loop-engine.mjs): tři techniky
+ *                      (palindrom / rozmlužení / střih v klidu) s náhodně dlouhými
+ *                      průchody a náhodnými přechody. Bere video skladby, jinak obal.
+ *                      16:9 nebo 9:16. Nahrazuje image_animation a full_scenes, které
+ *                      potřebovaly dashboard a nebyly na VM dostupné.
  *
  * Dashboard (FastAPI, Basic auth z env DASHBOARD_USER/DASHBOARD_PASSWORD) běží NA STEJNÉM
  * Oracle VM jako tento worker ⇒ volá se lokálně 127.0.0.1:8080, bez otevírání portů ven.
@@ -26,6 +30,7 @@ import { mkdir, writeFile, readFile, rm, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
+import { buildLoopVideo } from "./loop-engine.mjs";
 
 const exec = promisify(execFile);
 const url = process.env.SUPABASE_URL;
@@ -260,7 +265,7 @@ async function processJob(job) {
   const work = path.join(workRoot, `temney-${job.id}`);
   await mkdir(work, { recursive: true });
   try {
-    const songs = await request(api("sc_songs", `?select=id,title,cover_path,album_id&id=eq.${encodeURIComponent(job.song_id)}&user_id=eq.${encodeURIComponent(job.user_id)}`));
+    const songs = await request(api("sc_songs", `?select=id,title,cover_path,album_id,source_video_path&id=eq.${encodeURIComponent(job.song_id)}&user_id=eq.${encodeURIComponent(job.user_id)}`));
     const song = songs?.[0]; if (!song) throw new Error("Song not found");
     const versions = await request(api("sc_audio_versions", `?select=id,storage_path,original_storage_path,tagged_storage_path,is_final,is_primary,rating&song_id=eq.${encodeURIComponent(job.song_id)}&user_id=eq.${encodeURIComponent(job.user_id)}&is_final=eq.true&order=is_primary.desc,rating.desc&limit=1`));
     const version = versions?.[0]; if (!version) throw new Error("No final audio version");
@@ -271,18 +276,52 @@ async function processJob(job) {
       coverStoragePath = ownedPath(job.user_id, albums?.[0]?.cover_path);
     }
     const audio = path.join(work, "audio.mp3");
-    const artworkRaw = path.join(work, "artwork.raw");
     const output = path.join(work, "render.mp4");
-    await download(await signed(audioStoragePath), audio);
-    await download(await signed(coverStoragePath), artworkRaw);
-    // Skutečný typ obrázku určíme z magic bytů: ffmpeg i dashboard dostávají
-    // správnou příponu a MIME, jinak se JPEG failuje jako PNG.
-    const artwork = path.join(work, `artwork.${sniffImageExtension(await readFile(artworkRaw))}`);
-    if (artwork !== artworkRaw) await writeFile(artwork, await readFile(artworkRaw));
-    await rm(artworkRaw, { force: true });
-
     const type = job.mode || job.type || "static_cover";
-    if (type === "static_cover") {
+    // source_loop si bere video, nebo obal když video není, a obal nepotřebuje
+    // stahovat dopředu.
+    const needsArtwork = type !== "source_loop";
+    let artwork = null;
+    await download(await signed(audioStoragePath), audio);
+    if (needsArtwork) {
+      const artworkRaw = path.join(work, "artwork.raw");
+      await download(await signed(coverStoragePath), artworkRaw);
+      // Skutečný typ obrázku určíme z magic bytů: ffmpeg i dashboard dostávají
+      // správnou příponu a MIME, jinak se JPEG failuje jako PNG.
+      artwork = path.join(work, `artwork.${sniffImageExtension(await readFile(artworkRaw))}`);
+      if (artwork !== artworkRaw) await writeFile(artwork, await readFile(artworkRaw));
+      await rm(artworkRaw, { force: true });
+    }
+
+    if (type === "source_loop") {
+      // === větev D2: loop engine (náhrada image_animation a full_scenes) ===
+      // Všechno běží lokálním ffmpegem, žádný dashboard, žádné drahé GPU.
+      let sourceVideo;
+      if (typeof job.source_video_path === "string" && job.source_video_path) {
+        sourceVideo = path.join(work, "source.mp4");
+        await download(await signed(ownedPath(job.user_id, job.source_video_path)), sourceVideo);
+      }
+      let sourceImage = null;
+      if (!sourceVideo) {
+        const raw = path.join(work, "loopcover.raw");
+        await download(await signed(coverStoragePath), raw);
+        sourceImage = path.join(work, `loopcover.${sniffImageExtension(await readFile(raw))}`);
+        if (sourceImage !== raw) await writeFile(sourceImage, await readFile(raw));
+        await rm(raw, { force: true });
+      }
+      const result = await buildLoopVideo({
+        sourceVideo,
+        sourceImage,
+        audio,
+        out: output,
+        workDir: path.join(work, "loop"),
+        seed: String(job.id),
+        aspect: job.aspect === "9:16" ? "9:16" : "16:9",
+        onProgress: (line) => console.log(`[${job.id}] ${line}`),
+      });
+      await assertPlayableVideo(output);
+      console.log(`[ready] ${job.id} (source_loop, ${result.passes.length} průchodů, ${result.aspect}, ${result.duration.toFixed(2)} s)`);
+    } else if (type === "static_cover") {
       // === větev A: statický cover (lokální ffmpeg) ===
       // Pozor na filtry: `format` je samostatný filtr, musí být oddělený čárkou
       // (jinak ffmpeg hlásí "Option not found" na crop) a před ním musí být
