@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const renderTypes = readFileSync("supabase/migrations/20260925000000_agent_video_render_types.sql", "utf8");
@@ -50,5 +50,33 @@ describe("production workflow migrations", () => {
   it("fails the migration closed when illegal values remain", () => {
     expect(videoLoop).toContain("raise exception");
     expect(videoLoop).toContain("agent_videos má neplatné hodnoty po migraci");
+  });
+
+  it("never names a SQL function parameter after a reserved word", () => {
+    // Regrese: sc_owned_storage_path(user uuid, p text) spadlo na 42601
+    // ("syntax error at or near user"), takže migrace 20260928000000 nikdy
+    // neplatila a source_video_path v produkci neexistoval.
+    const reserved = [
+      "user", "table", "order", "group", "select", "where", "limit", "type", "mode",
+      "check", "default", "primary", "key", "references", "constraint", "column",
+      "all", "and", "or", "not", "null", "true", "false", "case", "when", "then",
+      "else", "end", "using", "natural", "join", "left", "right", "inner", "outer",
+      "on", "as", "asc", "desc", "distinct", "having", "union", "into", "values",
+      "returning", "with", "grant", "revoke", "row", "rows", "set", "begin", "commit",
+      "to", "from", "for", "if", "window", "over", "partition", "do", "column_name",
+    ];
+    const offenders: string[] = [];
+    for (const file of readdirSync("supabase/migrations")) {
+      if (!file.endsWith(".sql")) continue;
+      const sql = readFileSync(`supabase/migrations/${file}`, "utf8");
+      const pattern = /(?:function|procedure)\s+\w+\s*\(([^)]*)\)/gi;
+      for (const match of sql.matchAll(pattern)) {
+        for (const raw of (match[1] ?? "").split(",")) {
+          const name = raw.trim().split(/\s+/)[0]?.toLowerCase();
+          if (name && reserved.includes(name)) offenders.push(`${file}: ${match[0]}`);
+        }
+      }
+    }
+    expect(offenders, `rezervovaná slova jako parametry:\n${offenders.join("\n")}`).toEqual([]);
   });
 });

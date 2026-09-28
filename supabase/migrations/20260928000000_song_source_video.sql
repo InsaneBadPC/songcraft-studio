@@ -45,14 +45,16 @@ end $$;
 alter table sc_songs enable row level security;
 
 -- Stejne vlastnictvi jako u ostatnich uctovych cest: dalsi cesty nepovolime.
-create or replace function sc_owned_storage_path(user uuid, p text)
+-- Parametr se NESMI jmenovat 'user': to je rezervovane slovo v PostgreSQL a
+-- migrace s 'user uuid' spadla na 42601, takze se nikdy neaplikovala.
+create or replace function sc_owned_storage_path(p_user uuid, p text)
 returns boolean language sql stable as $$
   select p is not null
     and p <> ''
     and p not like '%..%'
     and p not like '\\%'
     and p not like '/%'
-    and (p = user::text or p like user::text || '/%');
+    and (p = p_user::text or p like p_user::text || '/%');
 $$;
 
 comment on function sc_owned_storage_path(uuid, text) is
