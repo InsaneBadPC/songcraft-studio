@@ -44,7 +44,7 @@
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const exec = promisify(execFile);
@@ -56,6 +56,24 @@ const MAX_BUFFER = 24 * 1024 * 1024;
 const TECHNIQUES = ["A", "B", "C"];
 /** Počet snímků zdroje na průchod → délka 2.5 s až 15 s. */
 const BURSTS = [72, 96, 120, 144, 168, 192, 216, 240, 288, 336, 360];
+/**
+ * Dvě věci, které na Oracle VM (954 MB RAM, 2 jádra) shodily dlouhé video:
+ *
+ * 1) PALINDROM BUFFERUJE. Filtr `reverse` drží celý půlcyklus v paměti.
+ *    Pro 15 s průchodu je to 360 snímků 1280x720, tedy asi 500 MB, a ffmpeg
+ *    padá na OOM. Proto je půlcyklus A omezený a dlouhé úseky berou B nebo C,
+ *    které streamují bez bufferu.
+ *
+ * 2) POČET PRŮCHODŮ RŮSTL S DÉLKOU SKLADBY. 6:18 song = 47 průchodů = hodiny
+ *    kódování a po každém OOM restart od nuly. Počet průchodů se proto počítá
+ *    z délky a průchody se prodlužují, ne množí.
+ */
+const A_MAX_HALF = Math.round(FPS * 1.5);
+/** 6 a víc průchodů už není potřeba, 16 a méně už není rozmanité. */
+const MIN_PASSES = 6;
+const MAX_PASSES = 16;
+/** ffmpeg s -threads 6 na 2 jádra držel v bufferu stovky MB. */
+const THREADS = "2";
 const OFFSETS = [0, 3, 6, 9, 12, 20, 30, 40, 57, 70, 83, 95, 100, 103, 105, 106, 108, 109, 115];
 /** Náhodné přechody pro spoj typu blend. hblur je pravý rozostřovací přechod. */
 const XFADES = [
@@ -155,13 +173,13 @@ async function buildSeamlessBase(video, out, frameCount) {
   const main = Math.max(12, frameCount - fade);
   const loopUnit = path.join(path.dirname(out), ".loopunit.mp4");
   try {
-    await ffmpeg(["-threads", "6", "-i", video, "-filter_complex",
+    await ffmpeg(["-threads", THREADS, "-filter_threads", "1", "-i", video, "-filter_complex",
       `[0:v]trim=start_frame=0:end_frame=${main},setpts=PTS-STARTPTS[a];`
       + `[0:v]trim=start_frame=${main}:end_frame=${frameCount},setpts=PTS-STARTPTS[b];`
       + `[a][b]xfade=transition=fade:duration=${(fade / FPS).toFixed(4)}`
       + `:offset=${((main - fade) / FPS).toFixed(4)},format=yuv420p[v]`,
       "-map", "[v]", "-frames:v", String(main), ...ENCODE, "-y", loopUnit]);
-    await ffmpeg(["-threads", "6", "-stream_loop", "3", "-i", loopUnit,
+    await ffmpeg(["-threads", THREADS, "-stream_loop", "3", "-i", loopUnit,
       "-map", "0:v", "-frames:v", String(main * 3), ...ENCODE, "-y", out]);
   } finally {
     await rm(loopUnit, { force: true });
@@ -178,11 +196,27 @@ async function buildSeamlessBase(video, out, frameCount) {
  * ~38× místo ~75×. Zvuk neřešíme, zdroj je beze zvuku.
  */
 async function slowSource(source, out, factor) {
-  await ffmpeg(["-threads", "6", "-i", source, "-vf", `setpts=${factor.toFixed(4)}*PTS,format=yuv420p`,
+  await ffmpeg(["-threads", THREADS, "-i", source, "-vf", `setpts=${factor.toFixed(4)}*PTS,format=yuv420p`,
     "-r", String(FPS), ...ENCODE, "-y", out]);
 }
 
 const pick = (rand, list) => list[Math.floor(rand() * list.length) % list.length];
+
+/**
+ * Odložený výstup už existuje?
+ *
+ * Každý průchod je samostatný ffmpeg a na tomhle VM trvá minuty. Když ffmpeg
+ * zabije OOM, worker zkusí práci zopakovat a bez tohoto by začal od průchodu
+ * nula. Hotový soubor se proto pouze znovu použije.
+ */
+async function alreadyDone(file) {
+  try {
+    const info = await stat(file);
+    return info.isFile() && info.size > 1024;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Plán v SNÍMKÁCH. Vrací průchody s `frames` (snímky zdroje) a plán spojů.
@@ -191,13 +225,24 @@ const pick = (rand, list) => list[Math.floor(rand() * list.length) % list.length
 export function planLoop({ duration, frameCount, calm, seed }) {
   const rand = randomFor(seed);
   const totalFrames = Math.round(duration * FPS);
+  // Počet průchodů roste s délkou pomalu, ne lineárně: krátká scéna si drží
+  // současné rozmanité členění, dlouhý song dostane méně a delších průchodů.
+  const targetPasses = Math.max(
+    MIN_PASSES,
+    Math.min(MAX_PASSES, Math.round(totalFrames / (FPS * 25))),
+  );
+  // Cílová délka průchodu v snímcích. Pro krátká videa (cíl do 360 snímků)
+  // se drží původní BURSTS, tam je rozmanitost vyzkoušená. Dlouhé skladby
+  // dostanou délku kolem cíle, jinak by jich bylo 30 místo 16.
+  const targetBurst = totalFrames / targetPasses;
+  const useTargetBurst = targetBurst > BURSTS[BURSTS.length - 1];
   // Každý přechod spotřebuje T snímků překryvu (xfade zkrátí spoj o T), takže
   // plán musí vyprodukovat o ΣT snímků navíc. Nejde to odhadnout předem, proto
   // se plán generuje několikrát, dokud součet nesedne na délku skladby.
   let budget = totalFrames;
   let passes = [];
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    passes = generatePasses({ budget, rand: randomFor(seed), frameCount, calm });
+  for (let attempt = 0; attempt < 14; attempt += 1) {
+    passes = generatePasses({ budget, rand: randomFor(seed), frameCount, calm, useTargetBurst, targetBurst });
     const content = passes.reduce((sum, x) => sum + x.outFrames, 0)
       - passes.filter((x) => x.join === "blend").reduce((sum, x) => sum + x.joinFrames, 0);
     const deficit = totalFrames - content;
@@ -207,8 +252,9 @@ export function planLoop({ duration, frameCount, calm, seed }) {
   return passes;
 }
 
-function generatePasses({ budget, rand, frameCount, calm }) {
+function generatePasses({ budget, rand, frameCount, calm, useTargetBurst = false, targetBurst = 0 }) {
   const totalFrames = budget;
+  const maxA = Math.max(2, Math.min(6, Math.round(totalFrames / (FPS * 25) / 3)));
   const maxOffset = Math.max(0, Math.min(frameCount - 8, 119));
   const calmSet = calm.filter((c) => c <= maxOffset);
   const calmUsable = calmSet.length ? calmSet : [0];
@@ -216,19 +262,37 @@ function generatePasses({ budget, rand, frameCount, calm }) {
   let used = 0;
   let lastTech = null;
   let sameRun = 0;
+  // Palindrom je nejlepší technika, ale jen když se do paměti vejde. Na dlouhé
+  // skladbě se jí proto používá jen párkrát a vždy v krátkém provedení.
+  let aCount = 0;
 
   while (totalFrames - used > FPS * 2) {
-    const burst = pick(rand, BURSTS);
+    // Délka průchodu: u krátkých vide z BURSTS, u dlouhých kolem cíle, aby jich
+    // nebylo 30. Náhodnost zůstává na stable ID práce.
+    const burst = useTargetBurst
+      ? Math.max(FPS * 3, Math.round(targetBurst * (0.6 + rand() * 0.8)))
+      : pick(rand, BURSTS);
     const room = totalFrames - used;
     const pool = sameRun >= 2 ? TECHNIQUES.filter((x) => x !== lastTech) : TECHNIQUES;
-    const tech = pick(rand, pool);
+    let tech = pick(rand, pool);
     // A je palindrom: 'frames' je délka půlcyklu a ven jde dvojnásobek, aby
     // délka průchodu zůstala ve stejném rozmezí jako u B a C
-    const frames = tech === "A" ? Math.max(FPS, Math.round(burst / 2)) : burst;
+    let frames = tech === "A" ? Math.max(FPS, Math.round(burst / 2)) : burst;
+    if (tech === "A" && aCount >= maxA) {
+      // Už padlo dost palindromů, dál půjde streamovací B nebo C.
+      tech = lastTech === "B" ? "C" : "B";
+      frames = burst;
+    } else if (tech === "A" && frames > A_MAX_HALF) {
+      // reverse drží půlcyklus v paměti, dlouhý by shodil ffmpeg přes OOM.
+      // Palindrom tedy zůstane, ale jen v krátkém provedení.
+      frames = A_MAX_HALF;
+    }
+    if (tech === "A") aCount += 1;
     const outFrames = tech === "A" ? frames * 2 : frames;
     if (room <= outFrames) {
       const shrunk = tech === "A" ? Math.max(8, Math.floor(room / 2)) : room;
       if (shrunk < FPS) break;
+      if (tech === "A" && shrunk > A_MAX_HALF) shrunk = A_MAX_HALF;
       const outFrames = tech === "A" ? shrunk * 2 : shrunk;
       passes.push({
         tech, frames: shrunk, outFrames, startFrame: 0,
@@ -345,7 +409,7 @@ async function renderPass(segment, source, out, frameCount, extraOut = 0) {
     // poslední snímek nebyl prvním a spoj měl skok 45x medianu.
     const graph = `[0:v]trim=start_frame=${segment.startFrame}:end_frame=${segment.startFrame + half},`
       + `setpts=PTS-STARTPTS,${pushIn(segment)}[h];[h]split[a][b];[b]reverse[r];[a][r]concat=n=2:v=1[v]`;
-    await ffmpeg(["-threads", "6", "-stream_loop", String(loopsFor(need, frameCount)), "-i", source,
+    await ffmpeg(["-threads", THREADS, "-stream_loop", String(loopsFor(need, frameCount)), "-i", source,
       "-filter_complex", graph, "-map", "[v]", "-frames:v", String(target), ...ENCODE, "-y", out]);
     return target;
   }
@@ -353,7 +417,7 @@ async function renderPass(segment, source, out, frameCount, extraOut = 0) {
   // B a C jedou bez zoomu a driftu: jejich první snímek musí být přesně flat
   // snímek zdroje, aby navázal na libovolný předchozí průchod bez střihu.
   const graph = `[0:v]trim=start_frame=${segment.startFrame},setpts=PTS-STARTPTS,${flat}${blur}[v]`;
-  await ffmpeg(["-threads", "6", "-stream_loop", String(loopsFor(need, frameCount)), "-i", source,
+  await ffmpeg(["-threads", THREADS, "-stream_loop", String(loopsFor(need, frameCount)), "-i", source,
     "-filter_complex", graph, "-map", "[v]", "-frames:v", String(target), ...ENCODE, "-y", out]);
   return target;
 }
@@ -364,10 +428,10 @@ async function renderJoin(previous, passFile, joinFile, join, previousFile) {
   const tail = path.join(joinFile, "..", `.tail.${path.basename(joinFile)}`);
   const head = path.join(joinFile, "..", `.head.${path.basename(joinFile)}`);
   try {
-    await ffmpeg(["-threads", "6", "-ss", ((previous.outFrames - T) / FPS).toFixed(4),
+    await ffmpeg(["-threads", THREADS, "-ss", ((previous.outFrames - T) / FPS).toFixed(4),
       "-i", previousFile, "-frames:v", String(T), ...ENCODE, "-y", tail]);
-    await ffmpeg(["-threads", "6", "-i", passFile, "-frames:v", String(T), ...ENCODE, "-y", head]);
-    await ffmpeg(["-threads", "6", "-i", tail, "-i", head,
+    await ffmpeg(["-threads", THREADS, "-i", passFile, "-frames:v", String(T), ...ENCODE, "-y", head]);
+    await ffmpeg(["-threads", THREADS, "-i", tail, "-i", head,
       // offset=0: přechod začíná hned na prvním snímku ocádku (který navazuje
       // na useknutou část předchozího průchodu) a končí na posledním snímku
       // hlavy. Offset posunutý o D-1/fps by přetékal za konec prvního vstupu a
@@ -408,7 +472,7 @@ export async function buildLoopVideo(options) {
   if (!source) {
     source = path.join(workDir, "base.mp4");
     await ffmpeg([
-      "-threads", "6", "-loop", "1", "-framerate", String(FPS), "-i", sourceImage,
+      "-threads", THREADS, "-loop", "1", "-framerate", String(FPS), "-i", sourceImage,
       "-vf", `${flat},zoompan=z='min(zoom+0.0018,1.10)':d=1:`
         + `x='iw/2-(iw/zoom/2)+16*sin(2*PI*on/120)':y='ih/2-(ih/zoom/2)':s=${W}x${H}:fps=${FPS}`,
       "-frames:v", String(FPS * 5), ...ENCODE, "-y", source,
@@ -442,9 +506,21 @@ export async function buildLoopVideo(options) {
   // prvních snímků průchodu i+1 a vyprodukuje z nich T snímků. Zbytek průchodu
   // i+1 se proto orezává až za hlavou, ne od začátku.
   const passesFiles = [];
+  const startedAt = Date.now();
+  const deadlineMs = duration * 4 * 60_000 + 10 * 60_000;
   for (let i = 0; i < passes.length; i += 1) {
     const pass = passes[i];
     const file = path.join(workDir, `pass${String(i).padStart(3, "0")}.mp4`);
+    if (await alreadyDone(file)) {
+      passesFiles.push(file);
+      onProgress(`  [${i + 1}/${passes.length}] ${pass.tech} použito z disku`);
+      continue;
+    }
+    const elapsed = Date.now() - startedAt;
+    if (elapsed > deadlineMs) {
+      throw new Error(`překročen časový limit ${(deadlineMs / 60_000).toFixed(0)} min `
+        + `na průchodu ${i + 1}/${passes.length}`);
+    }
     const produced = await renderPass(pass, source, file, frameCount);
     if (produced !== pass.outFrames) {
       throw new Error(`průchod ${i} (${pass.tech}) vyrobil ${produced} snímků, plán počítal ${pass.outFrames}`);
@@ -469,7 +545,7 @@ export async function buildLoopVideo(options) {
       parts.push(passesFiles[i]);
     } else {
       const middle = path.join(workDir, `part${String(i).padStart(3, "0")}mid.mp4`);
-      await ffmpeg(["-threads", "6", "-i", passesFiles[i],
+      await ffmpeg(["-threads", THREADS, "-i", passesFiles[i],
         "-vf", `trim=start_frame=${incoming}:end_frame=${incoming + keep},setpts=PTS-STARTPTS`,
         "-frames:v", String(keep), ...ENCODE, "-y", middle]);
       parts.push(middle);

@@ -26,7 +26,7 @@
  * Optional: DASHBOARD_URL (default http://127.0.0.1:8080), WORKER_INTERVAL_MS (30000),
  *           WORK_DIR, RUN_ONCE=1.
  */
-import { mkdir, writeFile, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, writeFile, readFile, readdir, rm, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -261,6 +261,42 @@ async function assertPlayableVideo(file) {
   return probe.replace(/\n/g, " ");
 }
 
+/**
+ * Lease na dlouhý render.
+ *
+ * Původních 15 minut nestačilo: 6:18 song kóduje hodiny a lease mezitím vypršel.
+ * Prodlužuje se při každém hlášení průběhu, nejvýš jednou za dvě minuty, aby
+ * se do DB netlačilo při každém průchodu.
+ */
+const LEASE_MS = 6 * 60 * 60 * 1000;
+const lastLease = new Map();
+function refreshLease(id, userId) {
+  const now = Date.now();
+  if (now - (lastLease.get(id) || 0) < 120_000) return;
+  lastLease.set(id, now);
+  return request(api("agent_videos", `?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(userId)}`), {
+    method: "PATCH",
+    body: JSON.stringify({ lease_expires_at: new Date(now + LEASE_MS).toISOString() }),
+  }).catch(() => {});
+}
+
+/** Uklidí pracovní adresáře starší než maxAgeMs, aby VM nedošlo místo. */
+async function pruneOldWork(maxAgeMs) {
+  try {
+    for (const entry of await readdir(work, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const dir = path.join(work, entry.name);
+      const info = await stat(dir).catch(() => null);
+      if (info && Date.now() - info.mtimeMs > maxAgeMs) {
+        await rm(dir, { recursive: true, force: true });
+        console.log(`[prune] ${entry.name}`);
+      }
+    }
+  } catch {
+    // pracovní adresář ještě nemusí existovat
+  }
+}
+
 async function processJob(job) {
   const work = path.join(workRoot, `temney-${job.id}`);
   await mkdir(work, { recursive: true });
@@ -317,7 +353,10 @@ async function processJob(job) {
         workDir: path.join(work, "loop"),
         seed: String(job.id),
         aspect: job.aspect === "9:16" ? "9:16" : "16:9",
-        onProgress: (line) => console.log(`[${job.id}] ${line}`),
+        onProgress: (line) => {
+          console.log(`[${job.id}] ${line}`);
+          void refreshLease(job.id, job.user_id);
+        },
       });
       await assertPlayableVideo(output);
       console.log(`[ready] ${job.id} (source_loop, ${result.passes.length} průchodů, ${result.aspect}, ${result.duration.toFixed(2)} s)`);
@@ -364,6 +403,7 @@ async function processJob(job) {
     if (!upload.ok) throw new Error(`Upload failed ${upload.status}: ${await upload.text()}`);
     await request(api("agent_videos", `?id=eq.${job.id}&user_id=eq.${job.user_id}`), { method: "PATCH", body: JSON.stringify({ render_status: "ready", storage_path: outputPath, output_path: outputPath, error_message: null, lease_expires_at: null }) });
     console.log(`[ready] ${job.id} (${type})`);
+    await rm(work, { recursive: true, force: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const attempt = Number(job.attempt_count || 0);
@@ -371,8 +411,18 @@ async function processJob(job) {
     const retry = attempt < maxAttempts;
     await request(api("agent_videos", `?id=eq.${job.id}&user_id=eq.${job.user_id}`), { method: "PATCH", body: JSON.stringify({ render_status: retry ? "queued" : "failed", lease_expires_at: null, error_message: message.slice(0, 1000) }) }).catch(() => {});
     console.error(`[${retry ? "retry" : "failed"}] ${job.id} (${attempt}/${maxAttempts}): ${message}`);
-  } finally {
-    await rm(work, { recursive: true, force: true });
+    if (!retry) {
+      // Hotové průchody se nechávají do posledního pokusu, protože engine z nich
+      // při dalším běhu vychází. Staré adresáře se uklidí, jinak by VM došlo
+      // místo na disku.
+      await rm(work, { recursive: true, force: true }).catch(() => {});
+      await pruneOldWork(24 * 60 * 60 * 1000);
+    } else {
+      // Při retry se adresář NEOZMĚNÍ: engine si z něj vezme už vykódované
+      // průchody. Dřív se tu mazalo všechno, takže OAM vždy rozběhl render od
+      // prvního průchodu a 6:18 song se nikdy nedokončil.
+      console.error(`[retry] ${job.id}: pracovní adresář ${work} se ponechává, engine naváže na hotové průchody`);
+    }
   }
 }
 
@@ -389,7 +439,7 @@ async function tick() {
     await request(api("agent_videos", `?id=eq.${encodeURIComponent(job.id)}&user_id=eq.${encodeURIComponent(job.user_id)}`), { method: "PATCH", body: JSON.stringify({ render_status: "failed", error_message: "Maximum render attempts exceeded.", lease_expires_at: null }) });
     return;
   }
-  const claimed = await request(api("agent_videos", `?id=eq.${encodeURIComponent(job.id)}&user_id=eq.${encodeURIComponent(job.user_id)}&render_status=eq.queued`), { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ render_status: "rendering", attempt_count: attempt, lease_expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(), error_message: null }) });
+  const claimed = await request(api("agent_videos", `?id=eq.${encodeURIComponent(job.id)}&user_id=eq.${encodeURIComponent(job.user_id)}&render_status=eq.queued`), { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ render_status: "rendering", attempt_count: attempt, lease_expires_at: new Date(Date.now() + LEASE_MS).toISOString(), error_message: null }) });
   const ok = Array.isArray(claimed) && claimed.length > 0;
   if (ok) await processJob({ ...job, attempt_count: attempt, max_attempts: maxAttempts, mode: claimed[0].mode || job.mode, backend: claimed[0].backend || job.backend, prompt_used: claimed[0].prompt_used || job.prompt_used });
 }
