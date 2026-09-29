@@ -249,7 +249,9 @@ async function assertPlayableVideo(file) {
       "-v", "error",
       "-select_streams", "v:0",
       "-show_entries", "stream=width,height,codec_name:format=duration",
-      "-of", "default=nw=1:nk=1",
+      // nk=1 by vyhodil názvy polí a výstup by byl jen h264/1280/720/378.32,
+      // takže kontrola width= by nikdy neselhala
+      "-of", "default=nw=1",
       file,
     ], { maxBuffer: 4 * 1024 * 1024 })
       .then(({ stdout }) => resolve(String(stdout)))

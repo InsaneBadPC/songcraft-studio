@@ -57,6 +57,33 @@ describe("Oracle video worker contract", () => {
       .not.toContain("dashGenerate");
   });
 
+  it("probes the output with field names so the check can actually match", () => {
+    // nk=1 vyhazuje názvy polí a validace hledající width= padla vždy
+    expect(worker).toContain('"default=nw=1"');
+    // konkrétní argument ffprobe, ne zmínka v komentáři
+    expect(worker).not.toContain('"default=nw=1:nk=1"');
+    expect(worker).not.toMatch(/"-of",\s*"default=[^"]*nk=1/);
+    expect(worker).toContain("/width=\\d+/i");
+  });
+
+  it("keeps finished passes on retry so the engine can resume", () => {
+    // smazání pracovního adresáře při retry znamenalo restart od prvního průchodu
+    expect(worker).toContain("se ponechává, engine naváže");
+    expect(worker).toContain("pruneOldWork");
+    expect(worker).toContain("LEASE_MS = 6 * 60 * 60 * 1000");
+  });
+
+  it("only reuses passes when the plan is unchanged", () => {
+    const engine = readFileSync("workers/video-renderer/loop-engine.mjs", "utf8");
+    expect(engine).toContain("plan.sha");
+    expect(engine).toContain("createHash");
+    expect(engine).toContain("pokračuji, plán beze změny");
+    // čištění smí být jen uvnitř větve "plán se změnil"
+    const cleanup = engine.slice(engine.indexOf("if (previous === fingerprint)"));
+    expect(cleanup).toContain("plán se změnil");
+    expect(cleanup).toContain("rm(path.join(workDir, file)");
+  });
+
   it("only knows render types the DB constraint allows", () => {
     const known = ['"static_cover"', '"image_animation"', '"full_scenes"', '"video_loop"'];
     for (const type of known) expect(worker).toContain(`type === ${type}`);

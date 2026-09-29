@@ -44,7 +44,8 @@
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 const exec = promisify(execFile);
@@ -463,9 +464,6 @@ export async function buildLoopVideo(options) {
   if (!audio) throw new Error("loop engine potřebuje audio pro určení délky videa");
   if (aspect !== "16:9" && aspect !== "9:16") throw new Error(`neznámý poměr stran: ${aspect}`);
   await mkdir(workDir, { recursive: true });
-  for (const file of await readdir(workDir)) {
-    if (/^(pass|part)\w*\d+\.mp4$/.test(file)) await rm(path.join(workDir, file), { force: true });
-  }
 
   const duration = await probeDuration(audio);
   let source = sourceVideo;
@@ -505,6 +503,23 @@ export async function buildLoopVideo(options) {
   // Žádná rezerva: přechod zpracovává T posledních snímků průchodu i a T
   // prvních snímků průchodu i+1 a vyprodukuje z nich T snímků. Zbytek průchodu
   // i+1 se proto orezává až za hlavou, ne od začátku.
+  // Uložené průchody patří konkrétnímu plánu. Když se plán shoduje, použijí se
+  // znovu a render po OOM naváže; když se změnil, staré soubory by byly jiné
+  // a musí pryč. Dřív se tu mazalo všechno vždy, takže checkpoint nikdy neplatil.
+  const fingerprint = createHash("sha256").update(JSON.stringify(passes)).digest("hex").slice(0, 16);
+  const marker = path.join(workDir, "plan.sha");
+  const previous = String(await readFile(marker, "utf8").catch(() => "")).trim();
+  if (previous === fingerprint) {
+    const kept = (await readdir(workDir)).filter((f) => /^pass\d+\.mp4$/.test(f)).length;
+    if (kept) onProgress(`pokračuji, plán beze změny, ${kept} průchodů už na disku`);
+  } else {
+    if (previous) onProgress("plán se změnil, čistím staré průchody");
+    for (const file of await readdir(workDir)) {
+      if (/^(pass|part)\w*\d+\.mp4$/.test(file)) await rm(path.join(workDir, file), { force: true });
+    }
+    await writeFile(marker, fingerprint);
+  }
+
   const passesFiles = [];
   const startedAt = Date.now();
   const deadlineMs = duration * 4 * 60_000 + 10 * 60_000;
