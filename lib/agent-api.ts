@@ -61,13 +61,29 @@ function isPendingAction(value: unknown): value is AgentPendingAction {
  * tool dispatch, ownership checks and confirmation policy stay in the Edge
  * Function; the app only sends bounded user text and renders typed results.
  */
-export async function confirmSongCraftPublication(action: "publish_to_youtube", confirmationId: string, confirmationToken: string) {
+/** Akce, které se v aplikaci potvrzují ťuknutím. */
+export const CONFIRMABLE_ACTIONS = [
+  "publish_to_youtube",
+  "run_vm_command",
+  "push_git_branch",
+  "deploy_worker",
+  "read_repo_file",
+  "read_skills",
+] as const;
+
+export type ConfirmableAction = (typeof CONFIRMABLE_ACTIONS)[number];
+
+export function isConfirmableAction(value: unknown): value is ConfirmableAction {
+  return typeof value === "string" && (CONFIRMABLE_ACTIONS as readonly string[]).includes(value);
+}
+
+export async function confirmSongCraftAction(action: ConfirmableAction, confirmationId: string, confirmationToken: string) {
   if (!confirmationId.trim() || confirmationToken.length < 32) throw new Error("Potvrzení není platné.");
   const { data, error } = await supabase.functions.invoke("agent-confirm", {
     body: { action, confirmationId, confirmationToken },
   });
-  if (error) throw new Error(error.message || "Potvrzení publikace se nezdařilo.");
-  return data as { status?: string; youtubeVideoId?: string; error?: string };
+  if (error) throw new Error(error.message || "Potvrzení se nezdařilo.");
+  return data as { status?: string; youtubeVideoId?: string; message?: string; summary?: string; error?: string };
 }
 
 export async function askSongCraftAgent(

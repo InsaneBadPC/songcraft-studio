@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { EmptyState, Shimmer, StudioHeader } from "@/components/studio-ui";
 import { ScreenContainer } from "@/components/screen-container";
 import { startPrivateLogin } from "@/constants/oauth";
-import { askSongCraftAgent, confirmSongCraftPublication, type AgentPendingAction } from "@/lib/agent-api";
+import { askSongCraftAgent, confirmSongCraftAction, isConfirmableAction, type AgentPendingAction } from "@/lib/agent-api";
 import type { StudioAssistantMessage } from "@/lib/assistant-chat";
 import { MAX_ASSISTANT_CONVERSATIONS, upsertAssistantConversation, type AssistantConversation } from "@/lib/assistant-history";
 import { useAuth } from "@/hooks/use-auth";
@@ -192,16 +192,19 @@ export default function AssistantScreen() {
     } catch (caught) { if (activeUserIdRef.current === requestUserId) setError(caught instanceof Error ? caught.message : "Asistent nyní není dostupný."); } finally { if (activeUserIdRef.current === requestUserId) setSending(false); }
   }
 
-  async function confirmPublication(action: AgentPendingAction) {
-    if (action.tool !== "publish_to_youtube" || !action.confirmationId || !action.confirmationToken || confirming) return;
+  async function confirmAction(action: AgentPendingAction) {
+    if (!isConfirmableAction(action.tool) || !action.confirmationId || !action.confirmationToken || confirming) return;
     setConfirming(true);
     try {
-      const result = await confirmSongCraftPublication("publish_to_youtube", action.confirmationId, action.confirmationToken);
+      const result = await confirmSongCraftAction(action.tool, action.confirmationId, action.confirmationToken);
       if (result.status === "published") {
         setPendingActions((current) => current.filter((entry) => entry.confirmationId !== action.confirmationId));
         Alert.alert("Publikace je hotová", result.youtubeVideoId ? `YouTube video ${result.youtubeVideoId} je nyní publikované.` : "Video bylo publikované.");
       } else if (result.error) {
-        Alert.alert("Publikace se nezdařila", result.error);
+        Alert.alert("Akce se nezdařila", result.error);
+      } else if (result.status === "approved") {
+        setPendingActions((current) => current.filter((entry) => entry.confirmationId !== action.confirmationId));
+        Alert.alert("Potvrzeno", result.message || "Operace se spustí na serveru.");
       }
     } catch (caught) {
       Alert.alert("Potvrzení se nezdařilo", caught instanceof Error ? caught.message : "Zkus to znovu.");
@@ -209,6 +212,15 @@ export default function AssistantScreen() {
       setConfirming(false);
     }
   }
+
+  const ACTION_LABELS: Record<string, string> = {
+    publish_to_youtube: "Publikovat na YouTube",
+    run_vm_command: "Spustit příkaz na serveru",
+    push_git_branch: "Pushnout větev do repa",
+    deploy_worker: "Nasadit workera na server",
+    read_repo_file: "Přečíst soubor z repa",
+    read_skills: "Přečíst dokumentaci",
+  };
 
   async function copyMessage(content: string) {
     Haptics.selectionAsync().catch(()=>{});
@@ -245,7 +257,7 @@ export default function AssistantScreen() {
         />
         {pendingActions.length ? <View style={[styles.pendingPanel, { backgroundColor: `${colors.warning}12`, borderColor: `${colors.warning}55` }]}>
           <View style={styles.pendingHeader}><MaterialIcons name="verified-user" size={18} color={colors.warning} /><Text style={[styles.pendingTitle, { color: colors.foreground }]}>Akce čeká na potvrzení</Text></View>
-          {pendingActions.map((action) => <View key={action.confirmationId ?? action.tool} style={styles.pendingAction}><View style={styles.pendingCopy}><Text style={[styles.pendingActionTitle, { color: colors.foreground }]}>{action.tool === "publish_to_youtube" ? "Publikovat na YouTube" : action.tool}</Text><Text style={[styles.pendingActionText, { color: colors.muted }]}>Veřejná změna se zatím neprovedla.</Text></View>{action.tool === "publish_to_youtube" && action.confirmationId && action.confirmationToken ? <Pressable disabled={confirming} onPress={() => void confirmPublication(action)} style={({ pressed }) => [styles.confirmButton, { opacity: confirming || pressed ? 0.6 : 1 }]}><Text style={styles.confirmButtonText}>{confirming ? "Ověřuji…" : "Potvrdit"}</Text></Pressable> : null}</View>)}
+          {pendingActions.map((action) => <View key={action.confirmationId ?? action.tool} style={styles.pendingAction}><View style={styles.pendingCopy}><Text style={[styles.pendingActionTitle, { color: colors.foreground }]}>{ACTION_LABELS[action.tool] ?? action.tool}</Text><Text style={[styles.pendingActionText, { color: colors.muted }]}>{typeof action.summary === "string" && action.summary ? action.summary : action.tool === "publish_to_youtube" ? "Veřejná změna se zatím neprovedla." : "Čeká na tvoje potvrzení."}</Text></View>{isConfirmableAction(action.tool) && action.confirmationId && action.confirmationToken ? <Pressable disabled={confirming} onPress={() => void confirmAction(action)} style={({ pressed }) => [styles.confirmButton, { opacity: confirming || pressed ? 0.6 : 1 }]}><Text style={styles.confirmButtonText}>{confirming ? "Ověřuji…" : "Potvrdit"}</Text></Pressable> : null}</View>)}
         </View> : null}
         {error ? <Animated.View entering={FadeInDown.duration(300)} style={[styles.errorBox, { backgroundColor: "rgba(239,68,68,0.10)", borderColor: "rgba(239,68,68,0.22)" }]}><MaterialIcons name="error-outline" size={16} color={colors.error} /><Text style={[styles.errorText, { color: colors.error }]}>{error}</Text></Animated.View> : null}
         <View style={[styles.composer, { backgroundColor: colors.surface, borderColor: "rgba(255,255,255,0.08)", shadowColor: "#000", shadowOpacity: 0.16, shadowRadius: 16, elevation: 8, paddingBottom: insets.bottom ? 8 : 8 }]}>

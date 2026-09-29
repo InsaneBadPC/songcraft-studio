@@ -10,6 +10,21 @@ const cors = {
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: cors });
 
+async function hashToken(token: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** Porovnání v konstantním čase, stejně jako u youtube-publish. */
+function sameBytes(left: string, right: string) {
+  const a = new TextEncoder().encode(left);
+  const b = new TextEncoder().encode(right);
+  let difference = a.length ^ b.length;
+  const length = Math.max(a.length, b.length);
+  for (let index = 0; index < length; index += 1) difference |= (a[index] ?? 0) ^ (b[index] ?? 0);
+  return difference === 0;
+}
+
 /**
  * Explicit confirmation boundary. The token is forwarded over the internal
  * Supabase Functions call but never logged, persisted, or accepted as a
@@ -52,6 +67,18 @@ Deno.serve(async (request) => {
       .single();
     if (readError || !row) return json({ error: "Operace nenalezena." }, 404);
     if (row.status !== "pending_confirmation") return json({ error: `Operace už je ve stavu ${row.status}.` }, 409);
+    // Bez shody tokenu s uloženým hashem operaci neschválíme. Samotné ID řádku
+    // není potvrzení.
+    if (!sameBytes(await hashToken(input.confirmationToken), String(row.nonce_hash ?? ""))) {
+      await admin.from("agent_action_log").insert({
+        user_id: user.id,
+        agent_name: "agent",
+        tool_name: `confirm:${input.action}`,
+        status: "error",
+        payload: { opId: row.id, reason: "neplatný potvrzovací token" },
+      });
+      return json({ error: "Potvrzení není platné." }, 403);
+    }
     if (new Date(row.expires_at).getTime() < Date.now()) {
       await admin.from("agent_ops").update({ status: "expired" }).eq("id", row.id);
       return json({ error: "Potvrzení vypršelo, potvrď to prosím znovu." }, 409);

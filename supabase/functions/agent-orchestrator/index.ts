@@ -1380,13 +1380,6 @@ async function dispatch(
         `Rozjelo se to. Video vznikne ze ${hasSourceVideo ? "nahrátého videa skladby" : "obalu skladby"}, dlouhé je jako skladba, průchody různě dlouhé a přechody nejsou vidět. Slíbeno, jak bude hotovo.`,
     };
   }
-async function sha256Hex(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
 /** Druhy operací, které jdou do fronty agent_ops na VM. */
 const OPS_ACTIONS = new Set([
   "run_vm_command",
@@ -1406,9 +1399,13 @@ async function queueOp(
   kind: string,
   args: Record<string, unknown>,
   summary: string,
-  nonce: string,
   command?: string,
 ) {
+  // Token se vygeneruje tady, uloží se jen jeho hash a uživateli se vrátí
+  // samotný token. Bez shody tokenu a hashe agent-confirm operaci neschválí,
+  // takže samotné ID řádku nestačí.
+  const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, "");
+  const nonceHash = await hashConfirmationToken(token);
   // Sloupec command je povinný pro kind shell (CHECK agent_ops_command_present),
   // args nese parametry ostatních druhů. Bez command by insert spadl.
   const { data, error } = await admin.from("agent_ops").insert({
@@ -1418,19 +1415,19 @@ async function queueOp(
     args,
     summary: clip(summary, 300),
     status: "pending_confirmation",
-    nonce_hash: nonce,
+    nonce_hash: nonceHash,
     requires_confirmation: true,
     expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
   }).select("id,kind,summary,status").single();
   if (error || !data) throw new Error(error?.message || "Operaci se nepodařilo založit.");
-  return data;
+  return { ...data, token };
 }
 
-function pendingOp(op: { id: string; kind: string; summary: string }) {
+function pendingOp(op: { id: string; kind: string; summary: string; token: string }) {
   return {
     status: "pending_confirmation",
     confirmationId: op.id,
-    confirmationToken: "[withheld]",
+    confirmationToken: op.token,
     action: op.kind,
     kind: op.kind,
     summary: op.summary,
@@ -1438,7 +1435,6 @@ function pendingOp(op: { id: string; kind: string; summary: string }) {
 }
 
   if (OPS_ACTIONS.has(name)) {
-    const nonce = await sha256Hex(`${crypto.randomUUID()}:${userId}:${Date.now()}`);
     const why = clip(args.why ?? "", 300);
     if (name === "run_vm_command") {
       const command = String(args.command ?? "");
@@ -1447,7 +1443,7 @@ function pendingOp(op: { id: string; kind: string; summary: string }) {
       if (/sudo|rm\s+-rf|\bDROP\b|\bTRUNCATE\b|\bDELETE\b\s+FROM/i.test(command)) {
         throw new Error("Tento příkaz je zablokovaný. Bezpečnostní pravidlo: agent nesmí mazat, mazat tabulky ani používat sudo.");
       }
-      const op = await queueOp(admin, userId, "shell", { command }, `příkaz na VM: ${command.slice(0, 120)}`, nonce, command);
+      const op = await queueOp(admin, userId, "shell", { command }, `příkaz na VM: ${command.slice(0, 120)}`, command);
       await log(admin, userId, name, "pending", { opId: op.id, why });
       return pendingOp({ ...op, summary: `${why} — ${command.slice(0, 120)}` });
     }
@@ -1464,21 +1460,21 @@ function pendingOp(op: { id: string; kind: string; summary: string }) {
     if (name === "push_git_branch") {
       const branch = String(args.branch ?? "");
       if (!/^[\w./-]+$/.test(branch)) throw new Error("Neplatný název větve.");
-      const op = await queueOp(admin, userId, "git_push", { branch }, `push větve ${branch}: ${why}`, nonce);
+      const op = await queueOp(admin, userId, "git_push", { branch }, `push větve ${branch}: ${why}`);
       await log(admin, userId, name, "pending", { opId: op.id, branch, why });
       return pendingOp(op);
     }
     if (name === "deploy_worker") {
-      const op = await queueOp(admin, userId, "deploy_worker", {}, `nasadit workera na VM: ${why}`, nonce);
+      const op = await queueOp(admin, userId, "deploy_worker", {}, `nasadit workera na VM: ${why}`);
       await log(admin, userId, name, "pending", { opId: op.id, why });
       return pendingOp(op);
     }
     if (name === "read_repo_file") {
-      const op = await queueOp(admin, userId, "read_file", { path: String(args.path ?? ""), ref: String(args.ref ?? "main") }, `čtení ${args.path} z repa`, nonce);
+      const op = await queueOp(admin, userId, "read_file", { path: String(args.path ?? ""), ref: String(args.ref ?? "main") }, `čtení ${args.path} z repa`);
       await log(admin, userId, name, "pending", { opId: op.id });
       return pendingOp(op);
     }
-    const op = await queueOp(admin, userId, "read_skills", {}, "čtení skills dokumentace", nonce);
+    const op = await queueOp(admin, userId, "read_skills", {}, "čtení skills dokumentace");
     await log(admin, userId, name, "pending", { opId: op.id });
     return pendingOp(op);
   }
