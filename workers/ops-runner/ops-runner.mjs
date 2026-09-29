@@ -37,9 +37,24 @@ const headers = {
 const api = (table, query = "") => `${url}/rest/v1/${table}${query}`;
 
 async function request(endpoint, options = {}) {
-  const response = await fetch(endpoint, { ...options, headers: { ...headers, ...(options.headers || {}) } });
-  if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
-  return response.status === 204 ? null : response.json();
+  // Bez timeoutu by se zavěšený fetch zastavil celá smyčka, protože chyby se
+  // vypisují jen jednou za cyklus a ticho by působilo jako "fronta je prázdná".
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const response = await fetch(endpoint, {
+      ...options,
+      signal: controller.signal,
+      headers: { ...headers, ...(options.headers || {}) },
+    });
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+    return response.status === 204 ? null : response.json();
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error(`timeout po 30 s: ${endpoint}`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const clip = (text) => (text.length > maxOutput ? `${text.slice(0, maxOutput)}\n… zkráceno` : text);
@@ -152,16 +167,26 @@ async function expireStale() {
 async function claimNext() {
   // atomický claim: dvě podmínky v jednom requestu, aby si dva rungery neukradly
   // stejný řádek
-  const { data: candidates } = await request(
+  // PostgREST přes surový fetch vrací JSON pole, ne objekt s klíčem data.
+  // Dřívější `const { data } = ...` tedy vždy dalo undefined a runner nikdy nic
+  // nevzal, přestože fronta plná byla.
+  const candidates = await request(
     api("agent_ops", "?status=eq.approved&select=id,user_id,kind,command,args,summary&order=created_at.asc&limit=1"),
   );
-  if (!candidates?.length) return null;
+  if (!Array.isArray(candidates) || !candidates.length) return null;
   const row = candidates[0];
-  const { data: claimed } = await request(
+  // PostgREST má u PATCH ve výchozím stavu Prefer: return=minimal, tedy 204
+  // bez těla. Bez return=representation by update proběhl, ale runner by neměl
+  // co vracet, řádek by zůstal viset ve stavu running a nikdo by ho dokončil.
+  const claimed = await request(
     api("agent_ops", `?id=eq.${row.id}&status=eq.approved`),
-    { method: "PATCH", body: JSON.stringify({ status: "running", started_at: new Date().toISOString() }) },
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ status: "running", started_at: new Date().toISOString() }),
+    },
   );
-  if (!claimed?.length) return null;
+  if (!Array.isArray(claimed) || !claimed.length) return null;
   return claimed[0];
 }
 

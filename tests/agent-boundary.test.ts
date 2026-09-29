@@ -96,6 +96,20 @@ describe("agent and publication boundaries", () => {
     expect(prompt).toContain("NEPIŠ motionPrompt");
   });
 
+  it("reads PostgREST responses as arrays, not as a supabase-js envelope", () => {
+    const ops = readFileSync("workers/ops-runner/ops-runner.mjs", "utf8");
+    // Runner používá surový fetch, takže vrací JSON pole. Rozbalení { data } by
+    // vždy dalo undefined a fronta by se nikdy nezpracovala.
+    expect(ops).not.toMatch(/const \{ data[^}]*\} = await request\(/);
+    expect(ops).toContain("Array.isArray(candidates)");
+    expect(ops).toContain("Array.isArray(claimed)");
+    // visící fetch nesmí zmrazit smyčku potichu
+    // PATCH musí žádat tělo zpět, jinak přijde 204 a řádek zůstane viset
+    expect(ops).toContain('Prefer: "return=representation"');
+    expect(ops).toContain("AbortController");
+    expect(ops).toContain("AbortError");
+  });
+
   it("keeps the system prompt template literal closed", () => {
     // Past na tuhle chybu: při patchi promptu se jednou přepsal řádek, který
     // template literal uzavíral, a orchestrator měl syntaktickou chybu, kterou
