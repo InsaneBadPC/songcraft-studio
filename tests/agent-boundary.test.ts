@@ -96,6 +96,16 @@ describe("agent and publication boundaries", () => {
     expect(prompt).toContain("NEPIŠ motionPrompt");
   });
 
+  it("keeps the system prompt template literal closed", () => {
+    // Past na tuhle chybu: při patchi promptu se jednou přepsal řádek, který
+    // template literal uzavíral, a orchestrator měl syntaktickou chybu, kterou
+    // tsc přehlédl a build těžko chytil.
+    const backticks = (orchestrator.match(/(?<!\\)`/g) || []).length;
+    expect(backticks % 2, "nepárový počet zpětných uvozovek v orchestrátoru").toBe(0);
+    expect(orchestrator).toMatch(/publish_to_youtube vždy vyžaduje potvrzení\.`;/);
+    expect(orchestrator).toMatch(/Čeká na potvrzení/);
+  });
+
   it("gates every VM operation behind the user's confirmation", () => {
     const confirm = readFileSync("supabase/functions/agent-confirm/index.ts", "utf8");
     const ops = readFileSync("workers/ops-runner/ops-runner.mjs", "utf8");

@@ -1407,10 +1407,14 @@ async function queueOp(
   args: Record<string, unknown>,
   summary: string,
   nonce: string,
+  command?: string,
 ) {
+  // Sloupec command je povinný pro kind shell (CHECK agent_ops_command_present),
+  // args nese parametry ostatních druhů. Bez command by insert spadl.
   const { data, error } = await admin.from("agent_ops").insert({
     user_id: userId,
     kind,
+    command: command ?? null,
     args,
     summary: clip(summary, 300),
     status: "pending_confirmation",
@@ -1443,7 +1447,7 @@ function pendingOp(op: { id: string; kind: string; summary: string }) {
       if (/sudo|rm\s+-rf|\bDROP\b|\bTRUNCATE\b|\bDELETE\b\s+FROM/i.test(command)) {
         throw new Error("Tento příkaz je zablokovaný. Bezpečnostní pravidlo: agent nesmí mazat, mazat tabulky ani používat sudo.");
       }
-      const op = await queueOp(admin, userId, "shell", { command }, `příkaz na VM: ${command.slice(0, 120)}`, nonce);
+      const op = await queueOp(admin, userId, "shell", { command }, `příkaz na VM: ${command.slice(0, 120)}`, nonce, command);
       await log(admin, userId, name, "pending", { opId: op.id, why });
       return pendingOp({ ...op, summary: `${why} — ${command.slice(0, 120)}` });
     }
@@ -1641,6 +1645,7 @@ VIDEO — pravidla, která nesmíš porušit:
 - Render je asynchronní. Neříkej "hotovo", ale "rozjelo se, hlásím se po dokončení", a pak zkontroluj stav (check_video_status).
 - OPERACE NA VM: run_vm_command, push_git_branch, deploy_worker, read_repo_file a read_skills VŽDY vracejí stav pending_confirmation. To znamená, že se NIC NESPUSTÍ, dokud uživatel neřekne ano. Uživateli vždy napiš slovy, CO přesně se má spustit (příkaz, větev, soubory) a počkej na jeho odpověď. Výsledek operace zjistíš přes check_op_status.
 - Nikdy si nevymýšlej, že operace proběhla, dokud check_op_status nevrátí done. Pokud vrátí failed, přečti error_message a řekni uživateli, co se pokazalo.
+- Publikování: nikdy nepublikuj bez výslovného "ok" uživatele. Nejdřív připrav koncept (generate_metadata + schedule_publication jako draft), ukaž uživateli náhled a titulky, a publikuj až když řekne ano. publish_to_youtube vždy vyžaduje potvrzení.`;
   const contents: LlmMessage[] = [...historyFrom(input ?? {}), {
     role: "user",
     parts: [{ type: "text", text: message }],
