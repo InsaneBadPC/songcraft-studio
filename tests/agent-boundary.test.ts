@@ -96,6 +96,43 @@ describe("agent and publication boundaries", () => {
     expect(prompt).toContain("NEPIŠ motionPrompt");
   });
 
+  it("gates every VM operation behind the user's confirmation", () => {
+    const confirm = readFileSync("supabase/functions/agent-confirm/index.ts", "utf8");
+    const ops = readFileSync("workers/ops-runner/ops-runner.mjs", "utf8");
+    for (const tool of ["run_vm_command", "push_git_branch", "deploy_worker", "read_repo_file", "read_skills"]) {
+      expect(orchestrator, tool).toContain(`name: "${tool}"`);
+      expect(confirm, tool).toContain(`"${tool}"`);
+    }
+    // fronta vzniká vždy jako pending_confirmation, nikdy rovnou approved
+    expect(orchestrator).toContain('status: "pending_confirmation"');
+    // runner smí brát výhradně approved
+    expect(ops).toContain('?status=eq.approved&select=');
+    expect(ops).toContain('?id=eq.${row.id}&status=eq.approved');
+    // tvrdý timeout, čisté prostředí, žádné vykonávání sudo
+    expect(ops).toContain("OPS_TIMEOUT_MS");
+    expect(ops).toContain("HOME: process.env.OPS_HOME");
+    expect(ops).not.toMatch(/exec\(\s*"sudo/);
+    expect(ops).not.toMatch(/bash\s*,\s*\[[^\]]*"sudo/);
+    // potvrzení přepíná stav na approved a audit je append-only
+    expect(confirm).toContain('"pending_confirmation"');
+    expect(confirm).toContain('"approved"');
+    expect(ops).toContain("agent_action_log");
+  });
+
+  it("blocks the destructive commands the agent must never run", () => {
+    const block = orchestrator.slice(orchestrator.indexOf("OPS_ACTIONS.has(name)"));
+    expect(block).toContain("sudo|rm");
+    expect(block).toContain("Bezpečnostní pravidlo");
+    expect(block).toContain("4_000");
+  });
+
+  it("blocks the destructive commands the agent must never run", () => {
+    const block = orchestrator.slice(orchestrator.indexOf('OPS_ACTIONS.has(name)'));
+    expect(block).toContain("sudo|rm\\s+-rf");
+    expect(block).toContain("Bezpečnostní pravidlo");
+    expect(block).toContain("4_000");
+  });
+
   it("keeps the web deploy token out of the repository", () => {
     const deployer = readFileSync("scripts/upload-supabase-web.mjs", "utf8");
     const entry = readFileSync("scripts/upload-external-web-entry.mjs", "utf8");

@@ -224,6 +224,70 @@ const toolDefs = [
     },
   },
   {
+    name: "run_vm_command",
+    description:
+      "Queue one shell command to run on the render VM. Use it for anything you cannot do from here: read logs, restart a service, check disk or a render, run the project's test gates. It is ALWAYS queued as pending and the USER MUST CONFIRM before anything runs, so tell the user exactly what will run and wait. Never use it to publish, never touch the database directly, never read secrets files.",
+    parameters: {
+      type: "object",
+      properties: {
+        command: { type: "string", description: "Jeden příkaz pro bash na VM" },
+        why: { type: "string", description: "Jedna věta pro uživatele, co tím chceš zjistit nebo udělat" },
+      },
+      required: ["command", "why"],
+    },
+  },
+  {
+    name: "check_op_status",
+    description:
+      "Read the result of a queued VM operation by its id. Returns status and the captured output.",
+    parameters: {
+      type: "object",
+      properties: { operationId: { type: "string" } },
+      required: ["operationId"],
+    },
+  },
+  {
+    name: "push_git_branch",
+    description:
+      "Queue a git push of the current work branch to the repository. ALWAYS needs the user's confirmation first. Use it after the user has seen the gates pass.",
+    parameters: {
+      type: "object",
+      properties: {
+        branch: { type: "string", description: "např. dev/ai-manager-studio nebo main" },
+        why: { type: "string" },
+      },
+      required: ["branch", "why"],
+    },
+  },
+  {
+    name: "deploy_worker",
+    description:
+      "Queue deploying the video worker (worker.mjs + loop-engine.mjs) to the VM and restarting its service. ALWAYS needs the user's confirmation first.",
+    parameters: {
+      type: "object",
+      properties: { why: { type: "string" } },
+      required: ["why"],
+    },
+  },
+  {
+    name: "read_repo_file",
+    description: "Read a file from the SongCraft Studio repository.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        ref: { type: "string", description: "větev, default main" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "read_skills",
+    description:
+      "Read the SongCraft Studio skills document: architecture, ops, known breakages, verification commands. Read it before doing any repo or VM work.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
     name: "create_recommendation",
     description: "Save a strategic recommendation for the user.",
     parameters: {
@@ -1316,6 +1380,104 @@ async function dispatch(
         `Rozjelo se to. Video vznikne ze ${hasSourceVideo ? "nahrátého videa skladby" : "obalu skladby"}, dlouhé je jako skladba, průchody různě dlouhé a přechody nejsou vidět. Slíbeno, jak bude hotovo.`,
     };
   }
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** Druhy operací, které jdou do fronty agent_ops na VM. */
+const OPS_ACTIONS = new Set([
+  "run_vm_command",
+  "push_git_branch",
+  "deploy_worker",
+  "read_repo_file",
+  "read_skills",
+]);
+
+/**
+ * Založí operaci ve stavu pending_confirmation..ops-runner na VM bere VYHRADNĚ
+ * řádky ve stavu approved, takže bez potvrzení se nic nespustí.
+ */
+async function queueOp(
+  admin: any,
+  userId: string,
+  kind: string,
+  args: Record<string, unknown>,
+  summary: string,
+  nonce: string,
+) {
+  const { data, error } = await admin.from("agent_ops").insert({
+    user_id: userId,
+    kind,
+    args,
+    summary: clip(summary, 300),
+    status: "pending_confirmation",
+    nonce_hash: nonce,
+    requires_confirmation: true,
+    expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+  }).select("id,kind,summary,status").single();
+  if (error || !data) throw new Error(error?.message || "Operaci se nepodařilo založit.");
+  return data;
+}
+
+function pendingOp(op: { id: string; kind: string; summary: string }) {
+  return {
+    status: "pending_confirmation",
+    confirmationId: op.id,
+    confirmationToken: "[withheld]",
+    action: op.kind,
+    kind: op.kind,
+    summary: op.summary,
+  };
+}
+
+  if (OPS_ACTIONS.has(name)) {
+    const nonce = await sha256Hex(`${crypto.randomUUID()}:${userId}:${Date.now()}`);
+    const why = clip(args.why ?? "", 300);
+    if (name === "run_vm_command") {
+      const command = String(args.command ?? "");
+      if (!command.trim()) throw new Error("Chybí command.");
+      if (command.length > 4_000) throw new Error("Příkaz je příliš dlouhý.");
+      if (/sudo|rm\s+-rf|\bDROP\b|\bTRUNCATE\b|\bDELETE\b\s+FROM/i.test(command)) {
+        throw new Error("Tento příkaz je zablokovaný. Bezpečnostní pravidlo: agent nesmí mazat, mazat tabulky ani používat sudo.");
+      }
+      const op = await queueOp(admin, userId, "shell", { command }, `příkaz na VM: ${command.slice(0, 120)}`, nonce);
+      await log(admin, userId, name, "pending", { opId: op.id, why });
+      return pendingOp({ ...op, summary: `${why} — ${command.slice(0, 120)}` });
+    }
+    if (name === "check_op_status") {
+      const { data, error } = await admin.from("agent_ops")
+        .select("id,kind,status,summary,output,exit_code,error_message,created_at,finished_at")
+        .eq("user_id", userId)
+        .eq("id", String(args.operationId ?? ""))
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data) throw new Error("Operace nenalezena.");
+      return { status: "success", operation: data };
+    }
+    if (name === "push_git_branch") {
+      const branch = String(args.branch ?? "");
+      if (!/^[\w./-]+$/.test(branch)) throw new Error("Neplatný název větve.");
+      const op = await queueOp(admin, userId, "git_push", { branch }, `push větve ${branch}: ${why}`, nonce);
+      await log(admin, userId, name, "pending", { opId: op.id, branch, why });
+      return pendingOp(op);
+    }
+    if (name === "deploy_worker") {
+      const op = await queueOp(admin, userId, "deploy_worker", {}, `nasadit workera na VM: ${why}`, nonce);
+      await log(admin, userId, name, "pending", { opId: op.id, why });
+      return pendingOp(op);
+    }
+    if (name === "read_repo_file") {
+      const op = await queueOp(admin, userId, "read_file", { path: String(args.path ?? ""), ref: String(args.ref ?? "main") }, `čtení ${args.path} z repa`, nonce);
+      await log(admin, userId, name, "pending", { opId: op.id });
+      return pendingOp(op);
+    }
+    const op = await queueOp(admin, userId, "read_skills", {}, "čtení skills dokumentace", nonce);
+    await log(admin, userId, name, "pending", { opId: op.id });
+    return pendingOp(op);
+  }
   if (name === "create_recommendation") {
     const { data, error } = await admin.from("agent_recommendations").insert({
       user_id: userId,
@@ -1477,7 +1639,8 @@ VIDEO — pravidla, která nesmíš porušit:
 - Když má píseň nahrané vlastní video, make_music_video i make_short místo plánu pohybu udělají plynulou smyčku z toho videa přes celou skladbu. Není třeba psát motionPrompt a nesmíš tvrdit, že jsi vymyslel vlastní pohyb.
 - make_music_video vrací co se bude hýbat. To uživateli řekni slovy, ne jsonem.
 - Render je asynchronní. Neříkej "hotovo", ale "rozjelo se, hlásím se po dokončení", a pak zkontroluj stav (check_video_status).
-- Publikování: nikdy nepublikuj bez výslovného "ok" uživatele. Nejdřív připrav koncept (generate_metadata + schedule_publication jako draft), ukaž uživateli náhled a titulky, a publikuj až když řekne ano. publish_to_youtube vždy vyžaduje potvrzení.`;
+- OPERACE NA VM: run_vm_command, push_git_branch, deploy_worker, read_repo_file a read_skills VŽDY vracejí stav pending_confirmation. To znamená, že se NIC NESPUSTÍ, dokud uživatel neřekne ano. Uživateli vždy napiš slovy, CO přesně se má spustit (příkaz, větev, soubory) a počkej na jeho odpověď. Výsledek operace zjistíš přes check_op_status.
+- Nikdy si nevymýšlej, že operace proběhla, dokud check_op_status nevrátí done. Pokud vrátí failed, přečti error_message a řekni uživateli, co se pokazalo.
   const contents: LlmMessage[] = [...historyFrom(input ?? {}), {
     role: "user",
     parts: [{ type: "text", text: message }],
