@@ -169,6 +169,19 @@ async function buildSeamlessBase(video, out, frameCount) {
   return main * 3;
 }
 
+/**
+ * Zpomalení pohybu zdroje.
+ *
+ * setpts=2*PTS zdvojnásobí dobu každého snímku, takže 5 s scéna zabere 10 s a
+ * pohyb je poloviční. Důsledek pro opakování: za stejnou délku skladby se
+ * projde jen polovina původního obsahu, takže scena "recykluje" v 6:18 videu
+ * ~38× místo ~75×. Zvuk neřešíme, zdroj je beze zvuku.
+ */
+async function slowSource(source, out, factor) {
+  await ffmpeg(["-threads", "6", "-i", source, "-vf", `setpts=${factor.toFixed(4)}*PTS,format=yuv420p`,
+    "-r", String(FPS), ...ENCODE, "-y", out]);
+}
+
 const pick = (rand, list) => list[Math.floor(rand() * list.length) % list.length];
 
 /**
@@ -268,12 +281,15 @@ function generatePasses({ budget, rand, frameCount, calm }) {
   }
   for (let i = 1; i < passes.length - 1; i += 1) {
     if (passes[i + 1].join !== "cut") continue;
-    // klidný bod je výhodné hlavně pro C, kde je obsah lineární
-    if (passes[i + 1].tech === "C") {
-      const calmFrame = pick(rand, calmUsable);
-      passes[i].startFrame = passes[i].tech === "A" ? calmFrame : calmFrame;
-      passes[i + 1].startFrame = passes[i].tech === "A" ? calmFrame : calmFrame;
-    }
+    if (passes[i + 1].tech !== "C") continue;
+    if (passes[i].tech !== "A") continue;
+    // Klidný bod se dá použít jen u C, který navazuje na PALINDROM. Palindrom
+    // končí přesně na svém prvním snímku, takže stejný offset je opravdu
+    // neviditelný spoj. U lineárního průchodu by to byl skok zpět na začátek,
+    // takže tam musí zůstat souvislé pokračování.
+    const calmFrame = pick(rand, calmUsable);
+    passes[i].startFrame = calmFrame;
+    passes[i + 1].startFrame = calmFrame;
   }
   // délka spojení nesmí přesáhnout ani jeden ze sousedních průchodů
   for (let i = 1; i < passes.length; i += 1) {
@@ -398,6 +414,15 @@ export async function buildLoopVideo(options) {
       "-frames:v", String(FPS * 5), ...ENCODE, "-y", source,
     ]);
   }
+  // Zpomalení jde PŘED seamless základem, aby se celý engine pracoval s
+  // pomalejším pohybem a počet průchodů přirozeně klesl.
+  const slowdown = Math.max(1, Math.min(4, Number(options.slowdown ?? 2)));
+  if (slowdown > 1) {
+    const slowed = path.join(workDir, "slow.mp4");
+    await slowSource(source, slowed, slowdown);
+    source = slowed;
+    onProgress(`pohyb zpomalen ${slowdown}x`);
+  }
   const rawFrameCount = await probeFrameCount(source);
   // Průchody jedou přes seamless zdroj, jinak se lineární průchod delší než
   // zbytek zdroje zasekne o tvrdý skok přes konec klipu.
@@ -485,7 +510,7 @@ export async function buildLoopVideo(options) {
   if (process.env.LOOP_KEEP_SEGMENTS !== "1") {
     for (const file of parts) await rm(file, { force: true });
   }
-  return { out, duration, passes, aspect };
+  return { out, duration, passes, aspect, slowdown };
 }
 
 if (process.argv[1] && process.argv[1].endsWith("loop-engine.mjs")) {
@@ -496,13 +521,15 @@ if (process.argv[1] && process.argv[1].endsWith("loop-engine.mjs")) {
   }
   const isVideo = /\.(mp4|mov|m4v|webm|mkv)$/i.test(input);
   const aspect = process.env.LOOP_ASPECT === "9:16" ? "9:16" : "16:9";
+  const slowdown = Number(process.env.LOOP_SLOWDOWN || 2);
   const result = await buildLoopVideo({
     sourceVideo: isVideo ? input : undefined,
     sourceImage: isVideo ? undefined : input,
-    audio, out, aspect,
+    audio, out, aspect, slowdown,
     workDir: path.join(path.dirname(out), ".loop-work"),
     seed: seed || "cli",
     onProgress: (line) => console.log(line),
   });
-  console.log(`hotovo: ${result.out} (${result.duration.toFixed(2)} s, ${result.passes.length} průchodů, ${result.aspect})`);
+  console.log(`hotovo: ${result.out} (${result.duration.toFixed(2)} s, ${result.passes.length} průchodů, `
+    + `${result.aspect}, zpomalení ${result.slowdown}x)`);
 }
