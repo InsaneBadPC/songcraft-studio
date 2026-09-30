@@ -1,6 +1,6 @@
 {
-  "name": "app-template",
-  "version": "1.0.0",
+  "name": "songcraft-studio",
+  "version": "2.9.1",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -13,7 +13,13 @@
     "lint": "expo lint",
     "format": "prettier --write .",
     "test": "vitest run",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "test:live": "vitest run --config vitest.live.config.ts",
+    "security:check": "node scripts/security-boundary-check.mjs",
+    "security:report": "node scripts/security-boundary-check.mjs --report",
+    "smoke:structure": "node scripts/production-smoke-check.mjs",
+    "db:push": "supabase db push",
+    "db:diff": "supabase db diff --schema public",
+    "db:reset": "supabase db reset",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "qr": "node scripts/generate_qr.mjs"
@@ -46,6 +52,7 @@
     "expo-haptics": "~15.0.8",
     "expo-image": "~3.0.11",
     "expo-image-picker": "~17.0.11",
+    "expo-intent-launcher": "~13.0.8",
     "expo-keep-awake": "~15.0.8",
     "expo-linear-gradient": "~15.0.8",
     "expo-linking": "~8.0.12",
