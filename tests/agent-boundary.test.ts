@@ -120,6 +120,17 @@ describe("agent and publication boundaries", () => {
     expect(new Set(deployed).size, "duplicitní nasazování").toBe(deployed.length);
   });
 
+  it("nasazuje legal stránky veřejně, ať na ně Googlebot dosáhne", () => {
+    const wf = readFileSync(".github/workflows/deploy-agent-orchestrator.yml", "utf8");
+    const legal = readFileSync("supabase/functions/legal/index.ts", "utf8");
+    expect(wf).toMatch(/functions deploy --use-api legal .*--no-verify-jwt/);
+    // veřejná stránka nesmí vracet nic osobního
+    expect(legal).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+    expect(legal).not.toContain("youtube_credentials");
+    expect(legal).toContain("page=privacy");
+    expect(legal).toContain("page=terms");
+  });
+
   it("keeps the system prompt template literal closed", () => {
     // Past na tuhle chybu: při patchi promptu se jednou přepsal řádek, který
     // template literal uzavíral, a orchestrator měl syntaktickou chybu, kterou
