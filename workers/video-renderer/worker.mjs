@@ -307,7 +307,11 @@ async function processJob(job) {
     const song = songs?.[0]; if (!song) throw new Error("Song not found");
     const versions = await request(api("sc_audio_versions", `?select=id,storage_path,original_storage_path,tagged_storage_path,is_final,is_primary,rating&song_id=eq.${encodeURIComponent(job.song_id)}&user_id=eq.${encodeURIComponent(job.user_id)}&is_final=eq.true&order=is_primary.desc,rating.desc&limit=1`));
     const version = versions?.[0]; if (!version) throw new Error("No final audio version");
-    const audioStoragePath = ownedPath(job.user_id, version.tagged_storage_path || version.original_storage_path || version.storage_path);
+    // Job si může přinést vlastní zvuk, třeba 30 s výřez pro short. Bez toho se
+    // vždy brala finální verze skladby a short vyšel dlouhý jako celá píseň.
+    const jobAudio = typeof job.audio_storage_path === "string" && job.audio_storage_path
+      ? ownedPath(job.user_id, job.audio_storage_path) : null;
+    const audioStoragePath = jobAudio || ownedPath(job.user_id, version.tagged_storage_path || version.original_storage_path || version.storage_path);
     let coverStoragePath = ownedPath(job.user_id, song.cover_path);
     if (!coverStoragePath && song.album_id) {
       const albums = await request(api("sc_albums", `?select=cover_path&id=eq.${encodeURIComponent(song.album_id)}&user_id=eq.${encodeURIComponent(job.user_id)}`));
@@ -433,7 +437,7 @@ async function tick() {
   const staleBefore = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
   await request(api("agent_videos", `?render_status=eq.rendering&or=(lease_expires_at.is.null,lease_expires_at.lt.${encodeURIComponent(staleBefore)})`), { method: "PATCH", body: JSON.stringify({ render_status: "queued", lease_expires_at: null, error_message: "Worker lease expired; job was requeued." }) }).catch(() => {});
 
-  const jobs = await request(api("agent_videos", "?select=id,user_id,song_id,type,mode,backend,prompt_used,attempt_count,max_attempts,lease_expires_at&render_status=eq.queued&order=created_at.asc&limit=1"));
+  const jobs = await request(api("agent_videos", "?select=id,user_id,song_id,type,mode,backend,prompt_used,attempt_count,max_attempts,lease_expires_at,audio_storage_path,aspect&render_status=eq.queued&order=created_at.asc&limit=1"));
   const job = jobs?.[0]; if (!job) return;
   const attempt = Number(job.attempt_count || 0) + 1;
   const maxAttempts = Number(job.max_attempts || 3);
