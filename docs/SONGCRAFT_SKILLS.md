@@ -520,63 +520,7 @@ POST {SUPABASE_URL}/storage/v1/object/songcraft/{uid}/covers/test.jpg   (JWT v A
 
 ---
 
-## 11b. SKILL: Repa, updater a podepisování APK
-
-### Změna 1. 10. 2026 — release už jde z `main`, ne z temney-agent
-
-Původní zápis v této sekci říkal, že updater tahá release z
-`songcraft-studio-temney-agent`. **To už neplatí.** Ověřeno 1. 10. 2026:
-
-| Repo's tagy `app-v*` | Poslední |
-|---|---|
-| `songcraft-studio` (main) | **app-v3.0.10** |
-| `songcraft-studio-temney-agent` | app-v3.0.7 (zastavený) |
-
-`lib/app-update.ts` v **main** má `REPO = "InsaneBadPC/songcraft-studio"` a
-`.github/workflows/build-apk.yml` publishuje do `github.repository`, což je main.
-Aplikace tedy hledá `app-v*` na **main**.
-
-`temney-agent` má ve svém `lib/app-update.ts` `REPO` ukazující na sebe, takže
-APK z něj by hledalo aktualizace jinde. **Pro současný updater je temney-agent
-mrtvý.** Pokud se to někdy vrátí k němu, je nutné to v `lib/app-update.ts`
-přepsat — jinak se uživatel aktualizace nedočká.
-
-### Postup dnes
-
-Push do `main` **sám spustí** `Build Android APK` (trigger na `push` do `main`
-s filtrem cest). Verzi si dopočítá workflow z nejvyššího existujícího tagu
-(1. 10. vydal 3.0.10, code 30010). `gh workflow run build-apk.yml
--f force_version=X.Y.Z` je jen pro ruční přepsání.
-
-Kontrola, že release vyšel a je podepsaný správně:
-
-```bash
-export GH_TOKEN=<token z PRISTUPOVE-ÚDAJE.md>
-gh release list --limit 3
-gh run list --limit 5            # "Build Android APK" = completed success
-gh run view <id> --log | grep -E "vydáno:|Configure release signing"
-```
-
-`Configure release signing` musí běžet a v `env:` ukázat `CI_KEYSTORE_B64`,
-`CI_KEYSTORE_PASS` a `CI_KEY_ALIAS` vyplněné. Kdyby chyběly,
-`configure-android-signing.mjs` spadne a build neprojde.
-
-### Podepisování — poznámka k ověření
-
-APK je podepsané schématem **v2/v3**, ne v1. Znamená to, že **v balíku není
-`META-INF/*.RSA`**, takže tohle nefunguje:
-
-```bash
-unzip -p app-release.apk META-INF/*.RSA   # prázdné
-```
-
-Ani `keytool -printcert -jarfile` ne. Bez `apksigner` z Android SDK nelze
-certifikát vytaženou porovnat ručně (parser APK Signing Blocku v Pythonu selhal
-i na schématu v2). **Jediná spolehlivá kontrola je, že uživatel otevře aplikaci
-a aktualizace se mu nabídne.** Pokud nabídka nepřijde, je třeba odinstalovat a
-instalovat ručně.
-
-### Původní popis (zastaralý, ponechaný pro historii)
+## 11b. SKILL: Dvě repa, updater a podepisování APK
 
 Repů jsou **dva** a nesmí se zaměnit:
 
@@ -595,6 +539,27 @@ Repů jsou **dva** a nesmí se zaměnit:
 3. zkopírovat soubory do `songcraft-studio-temney-agent`, vrátit tam
    `REPO` na temney-agent a verzi zvednout o 1 (3.0.6 → 3.0.7)
 4. pushnout a `gh workflow run build-apk.yml -f force_version=X.Y.Z`
+
+### POZOR 1. 10. 2026: main TAKY dělá releasy, a to je past
+
+`build-apk.yml` v `main` má trigger na `push` do `main` a opravdu publishuje
+release. **Uživatel ho ale neuvidí**, protože jeho APK je postavené z
+temney-agent a ptá se tam. 1. 10. takto vznikly na main tagy `app-v3.0.8`,
+`app-v3.0.9` a `app-v3.0.10`, o kterých uživatel **neví a nikdy je nedostane**.
+Jeho aplikace hlásí „žádná novější verze", protože temney-agent skončil na 3.0.7.
+
+**Poučení:** push do `main` sám o sobě aktualizaci uživateli neudělá. Vždy se
+kontroluje, **kam se aplikace ptá** – to je `REPO` v `lib/app-update.ts` repu,
+ze kterého byla APK sestavena, ne to, kde zrovna visí nejvyšší tag.
+Pushnutí do main bez kroku 3 výše je v podstatě zbytečná práce.
+
+### Ověření podpisu
+
+APK je podepsané schématem **v2/v3**, takže **nemá** `META-INF/*.RSA` –
+`unzip -p app-release.apk META-INF/*.RSA` vrátí prázdné a `keytool -printcert`
+taky ne. Bez `apksigner` z Android SDK nelze certifikát vytaženou porovnat
+(python parser APK Signing Blocku selhal i na v2). Jediná spolehlivá kontrola
+je, že uživatel otevře aplikaci a aktualizace se mu nabídne.
 
 ### Podepisování
 - `build-apk.yml` **musí** volat `scripts/configure-android-signing.mjs` a
