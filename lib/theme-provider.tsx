@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { View } from "react-native";
 
 import { SchemeColors, type ColorScheme } from "@/constants/theme";
 

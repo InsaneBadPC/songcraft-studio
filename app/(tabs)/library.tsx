@@ -46,7 +46,7 @@ export default function LibraryScreen() {
 
   if (loading || (isAuthenticated && snapshot.isLoading)) {
     return (
-      <ScreenContainer className="px-5">
+      <ScreenContainer inset>
         <View style={{ paddingTop: 14, gap: 12 }}>
           <Shimmer height={36} radius={16} />
           <Shimmer height={48} radius={16} />
@@ -68,14 +68,14 @@ export default function LibraryScreen() {
 
   if (!isAuthenticated) {
     return (
-      <ScreenContainer className="p-5 justify-center">
+      <ScreenContainer centered>
         <EmptyState icon="lock" title="Knihovna je soukromá" text="Přihlas se, aby se hotové skladby načetly z tvého cloudu." action={<Pressable onPress={() => void startPrivateLogin()} style={[styles.login, { backgroundColor: colors.primary }]}><Text style={styles.loginText}>Přihlásit se</Text></Pressable>} />
       </ScreenContainer>
     );
   }
 
   return (
-    <ScreenContainer className="px-5">
+    <ScreenContainer inset>
       <Animated.FlatList
         data={songs}
         keyExtractor={(item) => String(item.id)}
