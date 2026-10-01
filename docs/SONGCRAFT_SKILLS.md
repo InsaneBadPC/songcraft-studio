@@ -11,8 +11,10 @@ Když něco nešlo ověřit, je to v textu označené jako **NE OVĚŘENO**.
 | Položka | Hodnota |
 |---|---|
 | Pracovní kopie | `/data/data/com.termux/files/home/work/songcraft-studio` |
-| Git branch (aktuální) | `dev/ai-manager-studio` @ `398871cf` |
-| Starší kopie na sdcard | `/storage/emulated/0/InsaneCode/songcraft-studio` (16. 9., zastaralá) |
+| Git branch (aktuální) | `main` |
+| Verze, po které poznat správné repo | **`3.x`** – když vypišeš `2.9.1`, jsi ve špatné kopii |
+| Druhá kopie na sdcard | `/storage/emulated/0/InsaneCode/songcraft-studio` (2.9.1, mrtvá) — viz 11g |
+| `node_modules` | bind mount z vnitřního úložiště, viz 11g |
 | Zálohy | `/storage/emulated/0/InsaneCode/songcraft-backup-20260925.zip`, `songcraft-secrets-encrypted-20260925.zip` (+ `.sha256`) |
 | Secrety (mimo repo) | `~/InsaneCode/secrets/edge-functions.env` (16 klíčů), `songcraft-release.jks`, `songcraft-release.pass` |
 | Další secrety | `/storage/emulated/0/InsaneCode/Secret/` (Oracle, YouTube client_secret, `PRISTUPOVE-ÚDAJE.md`) |
@@ -634,6 +636,74 @@ Proto:
 - hledat `href: null`, skryté routes a přejmenované položky v layoutu
 - `lib/app-update.ts` a `app.config.ts` jsou dvě věci, které se při přenosu
   záměrně **nechávají** z cílového repa
+
+---
+
+## 11g. SKILL: `node_modules` na SD kartě (Termux) + dvě kopie repa
+
+### Proč bind mount
+
+SD karta (`/mnt/sdcard`, FAT/exFAT) **neumí symlinky**. `pnpm` je potřebuje
+pro `node_modules/.bin`, takže běžné `pnpm install` končí:
+
+```
+EACCES: permission denied, symlink '../semver/bin/semver.js' -> '.../node_modules/.bin/semver'
+```
+
+Řešení: `node_modules` je **adresář na vnitřním úložišti** a do repa se
+namapuje. `.npmrc` už obsahuje `node-linker=hoisted`, to samo nestačí.
+
+```bash
+REPO=/mnt/sdcard/InsaneCode/songcraft-studio   # nebo ~/work/songcraft-studio
+mkdir -p "$REPO/node_modules" /data/data/com.termux/files/home/snm
+mount --bind /data/data/com.termux/files/home/snm "$REPO/node_modules"
+cd "$REPO" && pnpm install --frozen-lockfile
+```
+
+**Po restartu Termuxu mount zmizí a `node_modules` bude vypadat prázdná.**
+`pnpm check` / `pnpm test` pak selžou „command not found“. Řešení je bind mount
+zopakovat – nic jiného se reinstalovat nemusí.
+
+Kontrola, že mount sedí:
+```bash
+mount | grep -c songcraft        # ma vypsat 1
+ls "$REPO/node_modules/.bin" | wc -l   # desítky, ne 0
+```
+
+`du -sh node_modules` přes bind mount vrací nesmyslné číslo – měřit
+`du -sh /data/data/com.termux/files/home/snm`.
+
+### Web export potřebuje `CI=true`
+
+`CI=true npx expo export --platform web`
+
+Bez `CI=true` se NativeWind CSS zapisuje na disk a Metro pro ten soubor neumí
+spočítat SHA-1 → `Failed to get the SHA-1 for .../web.css`. V `metro.config.js`
+je to už ošetřené (`forceWriteFileSystem: !isCI`), takže řešení je prostě
+proměnnou prostředí. GitHub Actions ji nastavuje sám.
+
+### POZOR: dvě kopie repa s různou historií
+
+| Kopie | Stav |
+|---|---|
+| `~/work/songcraft-studio` | **pracovní kopie** – má opravu importu, právní stránky, vrácený tab Alba |
+| `/mnt/sdcard/InsaneCode/songcraft-studio` | jiná linie historie, ne potomek té první |
+
+Obě míří na stejný GitHub remote, ale **nemají společného předka** – `git log`
+jedné nezná commity druhé a `git apply -3` nemá co porovnat. Kopie na SD kartě
+dlouho držela jen necommitnuté změny a působila jako ta správná.
+
+**Než začneš psát kód, ověř, kde ses:**
+
+```bash
+git -C ~/work/songcraft-studio log --oneline -3
+git -C /mnt/sdcard/InsaneCode/songcraft-studio log --oneline -3
+git -C <jedna> status --short | wc -l
+```
+
+Práce na SD kartě pak musí do pracovní kopie přejít ručně po souborach. A tady
+platí **11f**: při tomhle přenosu hledat `href: null` a další záměrně vrácené
+věci, protože kopie na SD kartě schovaný tab Alba pořád má.
 
 ---
 
