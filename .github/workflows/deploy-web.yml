@@ -16,36 +16,38 @@ concurrency:
 
 jobs:
   build:
-    name: Export static web
+    name: Create redirect to the current app
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      CI: "true"
-      EXPO_NO_TELEMETRY: "1"
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.12.0
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Verify and export web
+      - name: Create redirect
         run: |
-          pnpm check
-          # NativeWind writes this cache during its first Metro pass.
-          # A priming pass prevents Metro's first-run SHA race in clean CI runners.
-          npx expo export --platform web --output-dir /tmp/songcraft-web-prime || true
-          npx expo export --platform web --output-dir dist
+          mkdir -p dist
+          cat > dist/index.html <<'HTML'
+          <!doctype html>
+          <html lang="cs">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>SongCraft Studio se přesunulo</title>
+            <meta http-equiv="refresh" content="0; url=https://insanebadpc.github.io/songcraft-studio-temney-agent/">
+            <link rel="canonical" href="https://insanebadpc.github.io/songcraft-studio-temney-agent/">
+            <style>
+              body{font-family:system-ui,sans-serif;background:#0b0b0f;color:#f5f5f7;display:grid;place-items:center;min-height:100vh;margin:0;padding:24px;text-align:center}
+              a{color:#9fd3ff}
+              .card{max-width:560px;border:1px solid #333;border-radius:16px;padding:32px;background:#15151c}
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h1>Tohle je stará verze SongCraft Studia</h1>
+              <p>Přesouvám tě na aktuální verzi…</p>
+              <p><a href="https://insanebadpc.github.io/songcraft-studio-temney-agent/">Pokračovat ručně</a></p>
+            </div>
+            <script>location.replace("https://insanebadpc.github.io/songcraft-studio-temney-agent/"+location.hash);</script>
+          </body>
+          </html>
+          HTML
+          cp dist/index.html dist/404.html
           touch dist/.nojekyll
 
       - name: Upload Pages artifact
