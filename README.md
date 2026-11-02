@@ -1,3 +1,13 @@
+> ## ⚠️ TOTO REPO JE STARÉ A JIŽ SE NEPOUŽÍVÁ
+>
+> Aktuální projekt je **`InsaneBadPC/songcraft-studio-temney-agent`**:
+> https://github.com/InsaneBadPC/songcraft-studio-temney-agent
+>
+> Aktuální web: https://insanebadpc.github.io/songcraft-studio-temney-agent/
+>
+> Stará adresa `https://insanebadpc.github.io/songcraft-studio/` pouze přesměruje na aktuální web.
+> Nezakládej zde issues, neposílej PR ani sem nepřidávej nové commity.
+
 # SongCraft Studio
 
 SongCraft Studio je soukromý hudební workspace pro texty, artworky, finální MP3, AImanažera a soukromé video na Oracle VM.
