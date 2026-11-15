@@ -6,6 +6,7 @@ import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-nativ
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 import { supabase } from "@/lib/supabase";
+import { OnPrimary } from "@/lib/design-tokens";
 
 const PRIVATE_ACCOUNTS = [
   { id: "temney", name: "Temney", email: "temney@songcraft.test", description: "Autor a hlavní studio" },
@@ -112,6 +113,6 @@ const styles = StyleSheet.create({
   accountDescription: { fontSize: 11, lineHeight: 15 },
   input: { minHeight: 50, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, fontSize: 15, marginTop: 3 },
   primary: { height: 51, borderRadius: 15, alignItems: "center", justifyContent: "center", marginTop: 2 },
-  primaryText: { color: "#141317", fontSize: 15, fontWeight: "900" },
+  primaryText: { color: OnPrimary, fontSize: 15, fontWeight: "900" },
   note: { fontSize: 11, lineHeight: 16, textAlign: "center", marginTop: 2 },
 });

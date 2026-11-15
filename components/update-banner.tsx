@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/use-colors";
 import { checkForUpdate, getSkippedVersion, installUpdate, skipVersion, type AppUpdate } from "@/lib/app-update";
+import { OnPrimary } from "@/lib/design-tokens";
 
 /**
  * Nenápadný pruh v horní části aplikace, který se objeví jen když je na GitHubu novější APK.
@@ -89,7 +90,7 @@ export function UpdateBanner() {
                 onPress={() => void start()}
                 style={({ pressed }) => [styles.primary, { backgroundColor: colors.primary, transform: [{ scale: pressed ? 0.97 : 1 }], opacity: pressed ? 0.9 : 1 }]}
               >
-                <MaterialIcons name="download" size={18} color="#141317" />
+                <MaterialIcons name="download" size={18} color={OnPrimary} />
                 <Text style={styles.primaryText}>Aktualizovat</Text>
               </Pressable>
             ) : null}
@@ -118,7 +119,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 14,
     gap: 12,
-    shadowColor: "#7C3AED",
+    shadowColor: "#000000",
     shadowOpacity: 0.28,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 10 },
@@ -132,7 +133,7 @@ const styles = StyleSheet.create({
   fill: { height: "100%", borderRadius: 4 },
   actions: { flexDirection: "row", gap: 9 },
   primary: { flex: 1, minHeight: 46, borderRadius: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-  primaryText: { color: "#141317", fontSize: 14, fontWeight: "900" },
+  primaryText: { color: OnPrimary, fontSize: 14, fontWeight: "900" },
   ghost: { minHeight: 46, paddingHorizontal: 18, borderRadius: 14, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   ghostText: { fontSize: 14, fontWeight: "800" },
 });

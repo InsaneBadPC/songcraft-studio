@@ -4,6 +4,7 @@ import JSZip from "npm:jszip";
 import mammoth from "npm:mammoth";
 import { Buffer } from "node:buffer";
 import { isAllowedPrivateUser, privateAccessMessage } from "../_shared/access.ts";
+import { buildProjectItemArchive } from "../_shared/project-export.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -58,6 +59,20 @@ Deno.serve(async (request) => {
     if (!lyrics) return json({ error: "Google Dokument neobsahuje importovatelný text." }, 400);
     const { data, error } = await supabase.from("sc_lyrics").insert({ user_id: user.id, title: title || "Importovaný text", lyrics, notes: "Importováno z Google Dokumentu" }).select("id").single();
     return error ? json({ error: error.message }, 400) : json({ id: data.id });
+  }
+
+  if (input.action === "export_item") {
+    const kind = input.kind === "song" ? "song" : input.kind === "text" ? "text" : null;
+    const id = typeof input.id === "string" ? input.id : "";
+    if (!kind || !id) return json({ error: "Neplatný export." }, 400);
+    try {
+      const { archive, fileName } = await buildProjectItemArchive(supabase, user.id, kind, id, "SongCraft");
+      const path = `${user.id}/exports/${fileName}`;
+      const { error: uploadError } = await supabase.storage.from("songcraft").upload(path, archive, { contentType: "application/zip", upsert: true });
+      if (uploadError) return json({ error: uploadError.message }, 400);
+      const { data: signed, error: signError } = await supabase.storage.from("songcraft").createSignedUrl(path, 60 * 30);
+      return signError ? json({ error: signError.message }, 400) : json({ url: signed.signedUrl, fileName, byteSize: archive.byteLength });
+    } catch (error) { return json({ error: error instanceof Error ? error.message : "Export se nepodařil." }, 400); }
   }
 
   if (input.action === "export_library") {

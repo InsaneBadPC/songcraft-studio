@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { setPickedStylePrompt } from "@/lib/style-prompt-picker";
 import { trpc } from "@/lib/trpc";
+import { OnPrimary } from "@/lib/design-tokens";
 
 export default function StylePromptLibraryScreen() {
   const colors = useColors();
@@ -70,7 +71,7 @@ export default function StylePromptLibraryScreen() {
     <View style={styles.newRow}>
       <StarPicker rating={rating} onRate={setRating} size={26} colors={colors} />
       <Pressable onPress={() => void saveNew()} disabled={createPrompt.isPending || !content.trim()} style={({ pressed }) => [styles.saveButton, { backgroundColor: colors.primary, opacity: !content.trim() || createPrompt.isPending || pressed ? 0.55 : 1 }]}>
-        <MaterialIcons name="bookmark-add" size={18} color="#141317" /><Text style={styles.saveButtonText}>{createPrompt.isPending ? "Ukládám…" : "Uložit do databáze"}</Text>
+        <MaterialIcons name="bookmark-add" size={18} color={OnPrimary} /><Text style={styles.saveButtonText}>{createPrompt.isPending ? "Ukládám…" : "Uložit do databáze"}</Text>
       </Pressable>
     </View>
 
@@ -117,7 +118,7 @@ function StarPicker({ rating, onRate, size, colors }: { rating: number; onRate: 
 }
 
 function PrimarySmall({ label, onPress, muted, colors }: { label: string; onPress: () => void; muted?: boolean; colors: ReturnType<typeof useColors> }) {
-  return <Pressable onPress={onPress} style={({ pressed }) => [styles.smallButton, { backgroundColor: muted ? colors.surface : colors.primary, borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}><Text style={[styles.smallButtonText, { color: muted ? colors.muted : "#141317" }]}>{label}</Text></Pressable>;
+  return <Pressable onPress={onPress} style={({ pressed }) => [styles.smallButton, { backgroundColor: muted ? colors.surface : colors.primary, borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}><Text style={[styles.smallButtonText, { color: muted ? colors.muted : OnPrimary }]}>{label}</Text></Pressable>;
 }
 
 const styles = StyleSheet.create({
@@ -133,7 +134,7 @@ const styles = StyleSheet.create({
   newRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
   stars: { flexDirection: "row", gap: 2, alignItems: "center" },
   saveButton: { minHeight: 44, borderRadius: 14, paddingHorizontal: 15, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
-  saveButtonText: { color: "#141317", fontWeight: "900", fontSize: 13.5 },
+  saveButtonText: { color: OnPrimary, fontWeight: "900", fontSize: 13.5 },
   sortControl: { minHeight: 40, borderWidth: 1, borderRadius: 13, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 7 },
   sortText: { flex: 1, fontSize: 12.5, fontWeight: "800" },
   card: { borderWidth: 1, borderRadius: 18, padding: 13, gap: 10 },
@@ -147,5 +148,5 @@ const styles = StyleSheet.create({
   smallButton: { minHeight: 38, borderRadius: 11, borderWidth: 1, paddingHorizontal: 13, alignItems: "center", justifyContent: "center" },
   smallButtonText: { fontWeight: "900", fontSize: 12.5 },
   login: { minHeight: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  loginText: { color: "#141317", fontWeight: "800" },
+  loginText: { color: OnPrimary, fontWeight: "800" },
 });

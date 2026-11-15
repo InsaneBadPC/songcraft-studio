@@ -16,6 +16,7 @@ import type { StudioAssistantMessage } from "@/lib/assistant-chat";
 import { MAX_ASSISTANT_CONVERSATIONS, upsertAssistantConversation, type AssistantConversation } from "@/lib/assistant-history";
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
+import { OnPrimary } from "@/lib/design-tokens";
 
 const SUGGESTIONS = [
   { icon: "auto-awesome" as const, text: "Navrhni refrén podle mých textů", sub: "Analýza stylu + nálady" },
@@ -158,7 +159,7 @@ export default function AssistantScreen() {
           {SUGGESTIONS.map((s, i) => (
             <Animated.View key={s.text} entering={FadeInDown.delay(i * 80).duration(420)} layout={Layout.springify()}>
               <Pressable onPress={() => { Haptics.selectionAsync().catch(()=>{}); setDraft(s.text); }} disabled={inputDisabled} style={({ pressed }) => [styles.suggestion, { backgroundColor: colors.surface, borderColor: "rgba(255,255,255,0.08)", shadowColor: "#000", shadowOpacity: pressed ? 0.08 : 0.12, shadowRadius: 12, elevation: 3, opacity: pressed || inputDisabled ? 0.85 : 1, transform: [{ scale: pressed ? 0.98 : 1 }] }]}>
-                <LinearGradient colors={["rgba(59,130,246,0.12)", "rgba(139,92,246,0.10)"]} style={styles.suggestionIconBg}>
+                <LinearGradient colors={["rgba(0,217,236,0.14)", "rgba(255,149,0,0.10)"]} style={styles.suggestionIconBg}>
                   <MaterialIcons name={s.icon} size={18} color={colors.primary} />
                 </LinearGradient>
                 <View style={{ flex: 1, gap: 2 }}><Text style={[styles.suggestionText, { color: colors.foreground }]}>{s.text}</Text><Text style={[styles.suggestionSub, { color: colors.muted }]}>{s.sub}</Text></View>
@@ -216,7 +217,7 @@ export default function AssistantScreen() {
   }
 
   if (loading) return <ScreenContainer><View style={{ padding: 20, gap: 12 }}><Shimmer height={20} width="60%" /><Shimmer height={14} /><Shimmer height={14} width="80%" /></View></ScreenContainer>;
-  if (!isAuthenticated) return <ScreenContainer className="p-5 justify-center"><View style={[styles.emptyCard, { backgroundColor: colors.surface, borderColor: "rgba(255,255,255,0.08)" }]}><View style={[styles.emptyIcon, { backgroundColor: `${colors.primary}14` }]}><MaterialIcons name="lock" size={28} color={colors.primary} /></View><Text style={[styles.emptyTitle, { color: colors.foreground }]}>Přihlášení je potřeba</Text><Text style={[styles.emptyText, { color: colors.muted }]}>Asistent pracuje jen s tvými materiály.</Text><Pressable onPress={() => void startPrivateLogin()} style={({ pressed }) => [styles.loginBtn, { opacity: pressed ? 0.9 : 1, transform: [{ scale: pressed ? 0.97 : 1 }] }]}><LinearGradient colors={["#3B82F6","#6366F1"]} style={StyleSheet.absoluteFill as any} /><Text style={styles.loginText}>Přihlásit se</Text></Pressable></View></ScreenContainer>;
+  if (!isAuthenticated) return <ScreenContainer className="p-5 justify-center"><View style={[styles.emptyCard, { backgroundColor: colors.surface, borderColor: "rgba(255,255,255,0.08)" }]}><View style={[styles.emptyIcon, { backgroundColor: `${colors.primary}14` }]}><MaterialIcons name="lock" size={28} color={colors.primary} /></View><Text style={[styles.emptyTitle, { color: colors.foreground }]}>Přihlášení je potřeba</Text><Text style={[styles.emptyText, { color: colors.muted }]}>Asistent pracuje jen s tvými materiály.</Text><Pressable onPress={() => void startPrivateLogin()} style={({ pressed }) => [styles.loginBtn, { opacity: pressed ? 0.9 : 1, transform: [{ scale: pressed ? 0.97 : 1 }] }]}><LinearGradient colors={[colors.primary, colors.primaryVibrant]} style={StyleSheet.absoluteFill as any} /><Text style={styles.loginText}>Přihlásit se</Text></Pressable></View></ScreenContainer>;
 
   return (
     <ScreenContainer className="px-5" style={{ backgroundColor: colors.background }}>
@@ -302,7 +303,7 @@ const styles = StyleSheet.create({
   pendingActionTitle: { fontSize: 13, fontWeight: "800" },
   pendingActionText: { fontSize: 11, lineHeight: 15 },
   confirmButton: { minHeight: 40, paddingHorizontal: 13, borderRadius: 12, backgroundColor: "#F59E0B", alignItems: "center", justifyContent: "center" },
-  confirmButtonText: { color: "#141317", fontSize: 12, fontWeight: "900" },
+  confirmButtonText: { color: OnPrimary, fontSize: 12, fontWeight: "900" },
   errorBox: { flexDirection: "row", gap: 8, alignItems: "center", borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 8 },
   errorText: { flex: 1, fontSize: 12, fontWeight: "500" },
   composer: { flexDirection: "row", alignItems: "flex-end", gap: 10, borderWidth: 1, borderRadius: 20, padding: 8, marginBottom: 8, marginTop: 4 },

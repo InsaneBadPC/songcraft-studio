@@ -69,3 +69,17 @@ Thumbs.db
 .manus/
 .manus-logs/
 dist-web/
+
+# Local handoff secrets and private operational docs
+SECRETS/
+Instrukce_navod/
+*.pass
+cookies*.json
+session_export.json
+*credentials*.json
+access-token
+youtube-vm
+youtube-vm.pub
+PRISTUPOVE-ÚDAJE.md
+youtube_credentials.json
+supabase-secrets*.env

@@ -214,6 +214,14 @@ export async function importExternalGoogleDocument(url: string, title?: string) 
   return callExternalImport<{ id: string }>({ action: "import_google_document", url, ...(title?.trim() ? { title: title.trim() } : {}) });
 }
 
+export async function exportExternalItem(kind: "text" | "song", id: string) {
+  return callExternalUtility<{ url: string; fileName: string; byteSize: number }>({ action: "export_item", kind, id });
+}
+
+export async function importExternalItem(fileName: string, base64: string) {
+  return callExternalImport<{ id: string; kind: "text" | "song"; duplicate: boolean }>({ action: "import_item", fileName, base64 });
+}
+
 export async function exportExternalLibrary(albumId?: string) {
   return callExternalUtility<{ url: string; fileName: string; byteSize: number }>({ action: "export_library", ...(albumId ? { albumId } : {}) });
 }

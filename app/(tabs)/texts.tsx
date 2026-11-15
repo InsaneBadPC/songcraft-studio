@@ -21,7 +21,7 @@ const phaseMeta = (phase: Phase, colors: any) => {
   switch (phase) {
     case "published": return { label: "Publikováno", icon: "public" as const, color: colors.success, bg: "rgba(16,185,129,0.14)", border: colors.success };
     case "mp3": return { label: "S MP3", icon: "music-note" as const, color: colors.success, bg: "rgba(16,185,129,0.10)", border: colors.success };
-    case "album": return { label: "V albu", icon: "album" as const, color: colors.primary, bg: "rgba(59,130,246,0.12)", border: colors.primary };
+    case "album": return { label: "V albu", icon: "album" as const, color: colors.primary, bg: "rgba(0,217,236,0.12)", border: colors.primary };
     default: return { label: "Rozpracováno", icon: "edit-note" as const, color: colors.muted, bg: "rgba(148,163,184,0.10)", border: colors.muted };
   }
 };
@@ -76,7 +76,7 @@ export default function TextsScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 96 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} progressBackgroundColor={colors.surface} />}
         ListHeaderComponent={<>
-          <StudioHeader eyebrow="Kreativní dílna" title="Texty" action={<View style={styles.headerActions}><TextImporter /><Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(()=>{}); router.push("/text/new" as never); }} style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.97 : 1 }] }]}><LinearGradient colors={["#3B82F6", "#6366F1"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.fabGradient}><MaterialIcons name="add" size={22} color="#FFFFFF" /></LinearGradient></Pressable></View>} />
+          <StudioHeader eyebrow="Kreativní dílna" title="Texty" action={<View style={styles.headerActions}><TextImporter /><Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(()=>{}); router.push("/text/new" as never); }} style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.97 : 1 }] }]}><LinearGradient colors={[colors.primary, colors.primaryVibrant]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.fabGradient}><MaterialIcons name="add" size={22} color="#FFFFFF" /></LinearGradient></Pressable></View>} />
           <View style={[styles.search, { backgroundColor: colors.surface, borderColor: "rgba(255,255,255,0.08)", shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 4 }]}>
             <MaterialIcons name="search" size={20} color={colors.muted} />
             <TextInput value={search} onChangeText={setSearch} placeholder="Hledat v názvech, textech a promptech" placeholderTextColor={colors.muted} style={[styles.searchInput, { color: colors.foreground }]} />
@@ -142,7 +142,7 @@ export default function TextsScreen() {
       />
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom+12, backgroundColor: colors.background, borderTopColor: "rgba(255,255,255,0.06)" }]}>
         <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(()=>{}); router.push("/text/new" as never); }} style={({ pressed }) => [styles.bottomCta, { transform:[{scale: pressed?0.97:1}] }]}>
-          <LinearGradient colors={["#3B82F6","#6366F1","#8B5CF6"]} start={{x:0,y:0}} end={{x:1,y:0}} style={StyleSheet.absoluteFill as any} />
+          <LinearGradient colors={[colors.primary, colors.primaryVibrant]} start={{x:0,y:0}} end={{x:1,y:0}} style={StyleSheet.absoluteFill as any} />
           <MaterialIcons name="edit" size={19} color="#FFFFFF" />
           <Text style={styles.bottomCtaText}>Nový text</Text>
         </Pressable>

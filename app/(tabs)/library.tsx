@@ -8,6 +8,7 @@ import Animated, { FadeIn, FadeInDown, Layout } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CoverArt, EmptyState, GlassCard, IconButton, Shimmer, StudioHeader } from "@/components/studio-ui";
+import { LibraryImporter } from "@/components/library-importer";
 import { ScreenContainer } from "@/components/screen-container";
 import { startPrivateLogin } from "@/constants/oauth";
 import { useAuth } from "@/hooks/use-auth";
@@ -85,9 +86,10 @@ export default function LibraryScreen() {
           <>
             <StudioHeader eyebrow="Databáze skladeb" title="Knihovna" action={
               <View style={styles.headerActions}>
+                <LibraryImporter />
                 <IconButton label="YouTube export" icon="video-library" onPress={() => { Haptics.selectionAsync().catch(()=>{}); router.push("/export/youtube" as never); }} />
                 <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(()=>{}); router.push("/song/new" as never); }} style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.97 : 1 }], opacity: pressed ? 0.9 : 1 }]}>
-                  <LinearGradient colors={["#3B82F6", "#6366F1"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.fabGradient}>
+                  <LinearGradient colors={[colors.primary, colors.primaryVibrant]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.fabGradient}>
                     <MaterialIcons name="add" size={22} color="#FFFFFF" />
                   </LinearGradient>
                 </Pressable>
@@ -153,7 +155,7 @@ export default function LibraryScreen() {
                       </View>
                     )}
                     {isPublished && (
-                      <View style={[styles.badge, { backgroundColor: "rgba(59,130,246,0.12)", borderColor: "rgba(59,130,246,0.22)" }]}>
+                      <View style={[styles.badge, { backgroundColor: "rgba(0,217,236,0.12)", borderColor: "rgba(0,217,236,0.22)" }]}>
                         <MaterialIcons name="public" size={12} color={colors.primary} />
                         <Text style={[styles.badgeText, { color: colors.primary }]}>YouTube</Text>
                       </View>
@@ -173,7 +175,7 @@ export default function LibraryScreen() {
       {/* Thumb-zone primary CTA */}
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12, backgroundColor: colors.background, borderTopColor: "rgba(255,255,255,0.06)" }]}>
         <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(()=>{}); router.push("/song/new" as never); }} style={({ pressed }) => [styles.bottomCta, { transform: [{ scale: pressed ? 0.97 : 1 }] }]}>
-          <LinearGradient colors={["#3B82F6", "#6366F1", "#8B5CF6"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill as any} />
+          <LinearGradient colors={[colors.primary, colors.primaryVibrant]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill as any} />
           <MaterialIcons name="add" size={20} color="#FFFFFF" />
           <Text style={styles.bottomCtaText}>Nová skladba</Text>
         </Pressable>
